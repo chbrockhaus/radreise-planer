@@ -1,5 +1,4 @@
-ARG BUILD_FROM=ghcr.io/home-assistant/amd64-base-python:3.11
-FROM ${BUILD_FROM}
+FROM python:3.12-alpine
 
 # Java (für BRouter) + Download-Tools
 RUN apk add --no-cache \
@@ -19,11 +18,9 @@ RUN mkdir -p /opt/brouter/profiles2 /opt/brouter/customprofiles && \
 
 # App-Dateien kopieren
 WORKDIR /app
-COPY server.py          ./
+COPY server.py            ./
 COPY radreise_planer.html ./
-
-# Startskript
-COPY run.sh /app/run.sh
+COPY run.sh               ./
 RUN chmod +x /app/run.sh
 
 EXPOSE 3000
