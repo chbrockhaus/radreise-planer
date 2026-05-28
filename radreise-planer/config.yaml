@@ -1,0 +1,39 @@
+name: "Radreise Planer"
+description: >
+  Bikepacking-Routenplaner für mehrtägige Radreisen.
+  Teilt GPX-Routen in Etappen auf, sucht Campingplätze
+  und berechnet Routen offline über BRouter.
+version: "1.0.0"
+slug: "radreise_planer"
+init: false
+
+arch:
+  - aarch64
+  - amd64
+  - armhf
+  - armv7
+
+startup: application
+boot: auto
+
+ingress: true
+ingress_port: 3000
+panel_icon: "mdi:bicycle"
+panel_title: "Radreise Planer"
+
+# Persistente Daten (Touren, Route, Wegpunkte) bleiben erhalten
+map:
+  - type: data
+    path: /data
+
+# Add-on-Optionen
+options:
+  brouter_segments:
+    - "E5_N50"
+    - "E10_N50"
+  brouter_memory_mb: 256
+
+schema:
+  brouter_segments:
+    - str
+  brouter_memory_mb: int

@@ -1,0 +1,3056 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Radreise Planer · Raesfeld → Poritsch</title>
+<style>
+@import url('https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=DM+Sans:wght@300;400;500;600&display=swap');
+:root{
+  --bg:#111418;--surface:#181c24;--surface2:#1e2330;
+  --border:#252c3c;--accent:#3d8eff;
+  --green:#28c76a;--yellow:#f5a623;--red:#ff4d4d;
+  --text:#dce4f0;--muted:#6b7a99;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:'DM Sans',sans-serif;background:var(--bg);color:var(--text);height:100vh;display:flex;flex-direction:column;overflow:hidden}
+header{background:var(--surface);border-bottom:1px solid var(--border);padding:9px 18px;display:flex;align-items:center;gap:20px;flex-shrink:0;flex-wrap:wrap}
+.logo{font-family:'DM Mono',monospace;font-size:12px;color:var(--accent);letter-spacing:.1em;text-transform:uppercase}
+.stats{display:flex;gap:16px;flex-wrap:wrap}
+.stat{display:flex;flex-direction:column}
+.sl{font-size:9px;color:var(--muted);text-transform:uppercase;letter-spacing:.06em}
+.sv{font-family:'DM Mono',monospace;font-size:13px}
+.main{display:grid;grid-template-columns:360px 1fr;flex:1;overflow:hidden;min-height:0}
+/* ── Sidebar ── */
+.sidebar{background:var(--surface);border-right:1px solid var(--border);display:flex;flex-direction:column;overflow:hidden}
+.sb-head{padding:11px 15px 8px;border-bottom:1px solid var(--border);display:flex;justify-content:space-between;align-items:center;flex-shrink:0}
+.sb-head h2{font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.05em;color:var(--muted)}
+#searchAllBtn{font-size:11px;font-weight:600;background:var(--accent);color:#fff;border:none;border-radius:5px;padding:5px 11px;cursor:pointer;transition:opacity .2s;font-family:'DM Sans',sans-serif;white-space:nowrap}
+#searchAllBtn:hover{opacity:.85}
+#searchAllBtn:disabled{opacity:.35;cursor:not-allowed}
+.note-bar{font-size:10px;color:var(--muted);padding:4px 15px;font-style:italic;border-bottom:1px solid var(--border);flex-shrink:0;line-height:1.5}
+.progress-bar{height:2px;background:var(--border);flex-shrink:0}
+.progress-fill{height:100%;background:var(--accent);transition:width .4s;width:0%}
+.stages{flex:1;overflow-y:auto}
+.stage-card{border-bottom:1px solid var(--border);padding:10px 15px;cursor:pointer;transition:background .15s}
+.stage-card:hover{background:rgba(61,142,255,.05)}
+.stage-card.active{background:rgba(61,142,255,.1);border-left:3px solid var(--accent);padding-left:12px}
+.sh{display:flex;justify-content:space-between;align-items:center;margin-bottom:4px}
+.sn{font-family:'DM Mono',monospace;font-size:11px;color:var(--accent);font-weight:500}
+.sk{font-family:'DM Mono',monospace;font-size:10px;color:var(--muted)}
+.adj{display:flex;align-items:center;gap:5px;margin:4px 0;background:var(--surface2);border-radius:5px;padding:4px 7px}
+.adj-btn{width:21px;height:21px;background:var(--border);border:none;color:var(--text);border-radius:3px;cursor:pointer;font-size:15px;line-height:1;display:flex;align-items:center;justify-content:center;transition:background .15s;flex-shrink:0}
+.adj-btn:hover:not(:disabled){background:var(--accent);color:#fff}
+.adj-btn:disabled{opacity:.3;cursor:not-allowed}
+.adj-km{font-family:'DM Mono',monospace;font-size:13px;font-weight:500;min-width:52px;text-align:center}
+.km-warn{color:var(--yellow)}
+.adj-rest{font-size:10px;color:var(--muted);margin-left:auto}
+.search-btn{font-size:11px;font-weight:600;background:transparent;color:var(--accent);border:1px solid var(--accent);border-radius:4px;padding:4px 9px;cursor:pointer;width:100%;margin-top:5px;transition:all .2s;font-family:'DM Sans',sans-serif}
+.search-btn:hover:not(:disabled){background:var(--accent);color:#fff}
+.search-btn:disabled{opacity:.35;cursor:not-allowed}
+.campsite-list{margin-top:7px;display:flex;flex-direction:column;gap:4px}
+.camp{background:var(--bg);border:1px solid var(--border);border-radius:5px;padding:6px 8px}
+.cn{font-weight:600;font-size:12px;margin-bottom:1px}
+.cd{font-family:'DM Mono',monospace;font-size:10px;color:var(--muted);margin-bottom:2px}
+.camp-addr{font-size:10px;color:var(--muted);margin-bottom:2px}
+.badge{display:inline-flex;align-items:center;gap:3px;font-size:10px;font-weight:600;padding:2px 5px;border-radius:3px;text-transform:uppercase;letter-spacing:.04em}
+.b-yes{background:rgba(40,199,106,.15);color:var(--green)}
+.b-no{background:rgba(255,77,77,.15);color:var(--red)}
+.b-unk{background:rgba(245,166,35,.15);color:var(--yellow)}
+.b-load{background:rgba(61,142,255,.1);color:var(--accent)}
+.cw{display:block;font-size:10px;color:var(--accent);text-decoration:none;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;margin-top:2px}
+.cw:hover{text-decoration:underline}
+.cn-note{font-size:10px;color:var(--muted);margin-top:2px;font-style:italic;line-height:1.4}
+.no-camps{font-size:11px;color:var(--red);margin-top:5px}
+.err-msg{font-size:10px;color:var(--yellow);margin-top:3px;font-style:italic}
+.auto-adj-msg{font-size:10px;color:var(--yellow);margin-top:3px}
+.spin-wrap{display:flex;align-items:center;gap:6px;font-size:11px;color:var(--accent);margin-top:5px}
+.spin{display:inline-block;width:9px;height:9px;border:2px solid currentColor;border-top-color:transparent;border-radius:50%;animation:spin .7s linear infinite}
+@keyframes spin{to{transform:rotate(360deg)}}
+/* ── Map ── */
+#mapWrap{flex:1;position:relative;overflow:hidden}
+#map{width:100%;height:100%}
+.map-controls{position:absolute;top:12px;left:12px;display:flex;flex-direction:column;gap:4px;z-index:1000}
+.map-btn{width:32px;height:32px;background:rgba(24,28,36,.9);border:1px solid var(--border);color:var(--text);border-radius:5px;cursor:pointer;font-size:18px;display:flex;align-items:center;justify-content:center;transition:background .15s}
+.map-btn:hover{background:var(--accent);color:#fff}
+.map-legend{position:absolute;bottom:12px;left:12px;background:rgba(24,28,36,.9);border:1px solid var(--border);border-radius:6px;padding:8px 10px;font-size:10px;z-index:1000;display:flex;flex-direction:column;gap:4px;max-height:calc(100vh - 80px);overflow-y:auto}
+.leg-toggle{cursor:pointer;display:flex;align-items:center;justify-content:space-between;gap:8px;color:var(--muted);font-size:9px;letter-spacing:.05em;user-select:none;padding:1px 0}
+.leg-toggle:hover{color:var(--text)}
+.leg-row{display:flex;align-items:center;gap:6px}
+.leg-dot{width:10px;height:10px;border-radius:50%;border:1.5px solid rgba(255,255,255,.5);flex-shrink:0}
+.leg-line{width:18px;height:3px;border-radius:2px;flex-shrink:0}
+.leg-sep{border:none;border-top:1px solid var(--border);margin:2px 0}
+.leaflet-control-scale-line{background:rgba(24,28,36,.88)!important;border:1px solid var(--border)!important;color:var(--text)!important;font-family:'DM Sans',sans-serif!important;font-size:10px!important;border-top:2px solid var(--muted)!important;padding:1px 5px!important}
+.leaflet-tooltip{font-family:'DM Sans',sans-serif;font-size:11px;line-height:1.5;background:rgba(24,28,36,.95);border:1px solid #252c3c;color:#dce4f0;border-radius:5px;padding:5px 9px;pointer-events:none}
+.leaflet-tooltip-top::before{border-top-color:#252c3c}
+.co-popup .leaflet-popup-content-wrapper{background:rgba(18,22,32,.97);border:1px solid #2d3550;color:#dce4f0;border-radius:8px;box-shadow:0 4px 20px rgba(0,0,0,.6);padding:0}
+.co-popup .leaflet-popup-content{margin:0;line-height:1.5}
+.co-popup .leaflet-popup-tip-container .leaflet-popup-tip{background:rgba(18,22,32,.97)}
+.co-popup .leaflet-popup-close-button{color:#888!important;font-size:16px;top:6px;right:8px}
+.co-popup .leaflet-popup-close-button:hover{color:#fff!important}
+.co-inner{padding:10px 13px;font-family:'DM Sans',sans-serif;font-size:11px;min-width:170px;max-width:280px}
+.co-title{font-size:13px;font-weight:700;margin-bottom:6px;color:#fff}
+.co-row{margin-bottom:2px;color:#bbb;display:flex;gap:5px;align-items:baseline}
+.co-row a{color:#3d8eff;text-decoration:none;word-break:break-all}
+.co-row a:hover{text-decoration:underline}
+.co-osm-link{margin-top:7px;padding-top:5px;border-top:1px solid #2d3550;font-size:9px}
+.co-osm-link a{color:#555}
+.co-osm-link a:hover{color:#888}
+.camp-osm-hint{position:absolute;left:50%;transform:translateX(-50%);bottom:42px;background:rgba(24,28,36,.88);border:1px solid var(--border);border-radius:4px;padding:4px 10px;font-size:10px;color:var(--muted);z-index:1000;pointer-events:none;white-space:nowrap}
+.camp{cursor:pointer}
+.camp-active{background:rgba(61,142,255,.14)!important;border-left:3px solid var(--accent);padding-left:5px}
+.ws-row{display:flex;align-items:center;gap:4px;margin-top:3px;flex-wrap:wrap}
+.ws-edit{display:flex;gap:4px;margin-top:3px;align-items:center}
+.ws-input{flex:1;min-width:0;background:var(--bg);border:1px solid var(--accent);border-radius:3px;color:var(--text);font-size:10px;padding:3px 6px;font-family:'DM Sans',sans-serif;outline:none}
+.icon-btn{background:var(--surface2);border:1px solid var(--border);color:var(--muted);border-radius:3px;cursor:pointer;font-size:11px;padding:2px 5px;line-height:1;flex-shrink:0;transition:all .15s}
+.icon-btn:hover{background:var(--accent);color:#fff;border-color:var(--accent)}
+.muted-sm{font-size:10px;color:var(--muted);font-style:italic}
+.target-btn{font-size:10px;font-weight:600;background:transparent;color:var(--green);border:1px solid var(--green);border-radius:4px;padding:3px 7px;cursor:pointer;margin-top:4px;width:100%;transition:all .2s;font-family:'DM Sans',sans-serif}
+.target-btn:hover{background:var(--green);color:#fff}
+.target-btn.active{background:var(--green);color:#fff}
+.target-btn.remove{color:var(--red);border-color:var(--red)}
+.target-btn.remove:hover{background:var(--red);color:#fff}
+.map-btn.active{background:var(--accent);color:#fff}
+.route-status{font-size:10px;color:var(--green);margin-top:3px;display:flex;align-items:center;gap:4px}
+.hdr-btn{font-size:11px;font-weight:600;background:transparent;color:var(--muted);border:1px solid var(--border);border-radius:5px;padding:5px 11px;cursor:pointer;transition:all .2s;font-family:'DM Sans',sans-serif;white-space:nowrap;margin-left:auto}
+.hdr-btn:hover{background:var(--surface2);color:var(--text)}
+.exp-btn{font-size:10px;background:transparent;color:var(--muted);border:1px solid var(--border);border-radius:4px;padding:3px 8px;cursor:pointer;margin-top:4px;transition:all .2s;font-family:'DM Sans',sans-serif;width:100%;text-align:left}
+.exp-btn:hover{background:var(--surface2);color:var(--text)}
+.elev-wrap{margin:4px 0 2px;background:var(--surface2);border-radius:4px;padding:5px 7px}
+.elev-row{display:flex;gap:10px;margin-bottom:3px}
+.elev-up{font-family:'DM Mono',monospace;font-size:10px;color:var(--green)}
+.elev-down{font-family:'DM Mono',monospace;font-size:10px;color:var(--muted)}
+.adj-locked{font-size:9px;color:var(--muted);font-style:italic;margin-left:4px;align-self:center}
+.camp-toggle{font-size:10px;color:var(--accent);padding:4px 7px 2px;cursor:pointer;opacity:.8;display:block}
+.camp-toggle:hover{opacity:1}
+.manual-sect{margin-top:4px}
+.manual-badge{font-size:9px;background:rgba(61,142,255,.15);color:var(--accent);border-radius:3px;padding:1px 5px;margin-left:5px;vertical-align:middle}
+.del-btn{font-size:10px;background:transparent;color:var(--red);border:1px solid var(--red);border-radius:3px;padding:2px 7px;cursor:pointer;font-family:'DM Sans',sans-serif;transition:all .15s;margin-top:4px}
+.del-btn:hover{background:var(--red);color:#fff}
+.add-camp-btn{font-size:10px;background:transparent;color:var(--accent);border:1px dashed rgba(61,142,255,.5);border-radius:4px;padding:3px 8px;cursor:pointer;margin-top:5px;width:100%;text-align:left;font-family:'DM Sans',sans-serif;transition:all .15s}
+.add-camp-btn:hover{border-style:solid;background:rgba(61,142,255,.07)}
+.add-camp-form{background:var(--surface2);border-radius:5px;padding:8px 10px;margin-top:5px;border:1px solid var(--border)}
+.acf-label{font-size:9px;color:var(--muted);text-transform:uppercase;letter-spacing:.05em;margin-top:7px;display:block}
+.acf-label:first-child{margin-top:0}
+.acf-input{background:var(--bg);border:1px solid var(--border);color:var(--text);border-radius:4px;padding:4px 7px;font-family:'DM Sans',sans-serif;font-size:11px;width:100%;box-sizing:border-box}
+.acf-input:focus{outline:none;border-color:var(--accent)}
+.acf-row{display:flex;gap:6px;margin-top:3px}
+.acf-row .acf-input{flex:1}
+.acf-btns{display:flex;gap:6px;margin-top:8px}
+.acf-save{flex:1;background:var(--accent);color:#fff;border:none;border-radius:4px;padding:5px;cursor:pointer;font-size:11px;font-weight:600;font-family:'DM Sans',sans-serif}
+.acf-save:hover{opacity:.85}
+.acf-cancel{background:transparent;color:var(--muted);border:1px solid var(--border);border-radius:4px;padding:5px 10px;cursor:pointer;font-size:11px;font-family:'DM Sans',sans-serif}
+/* ── Tour Modal ── */
+.tour-modal-bg{position:fixed;inset:0;background:rgba(0,0,0,.65);z-index:9000;display:none;align-items:center;justify-content:center}
+.tour-modal-bg.open{display:flex}
+.tour-modal{background:var(--surface);border:1px solid var(--border);border-radius:10px;width:460px;max-width:95vw;max-height:90vh;overflow-y:auto;padding:22px;position:relative}
+.tour-tabs{display:flex;border:1px solid var(--border);border-radius:6px;margin-bottom:16px;overflow:hidden}
+.tour-tab{flex:1;padding:8px;border:none;cursor:pointer;font-family:'DM Sans',sans-serif;font-size:12px;font-weight:600;transition:all .15s}
+.tour-tab.active{background:var(--accent);color:#fff}
+.tour-tab:not(.active){background:transparent;color:var(--muted)}
+.tour-tab:not(:first-child){border-left:1px solid var(--border)}
+.gpx-drop{border:2px dashed var(--border);border-radius:8px;padding:28px 20px;text-align:center;cursor:pointer;transition:border-color .2s;margin-bottom:10px}
+.gpx-drop:hover,.gpx-drop.drag{border-color:var(--accent)}
+.stage-count-row{display:flex;align-items:center;gap:10px}
+.stage-count-val{font-family:'DM Mono',monospace;font-size:20px;font-weight:700;min-width:32px;text-align:center}
+.modal-actions{display:flex;gap:10px;margin-top:18px}
+.modal-btn-cancel{flex:1;background:transparent;color:var(--muted);border:1px solid var(--border);border-radius:5px;padding:9px;cursor:pointer;font-size:12px;font-family:'DM Sans',sans-serif}
+.modal-btn-ok{flex:2;background:var(--accent);color:#fff;border:none;border-radius:5px;padding:9px;cursor:pointer;font-size:12px;font-weight:600;font-family:'DM Sans',sans-serif}
+.modal-btn-ok:disabled{opacity:.35;cursor:not-allowed}
+.modal-lbl{font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.05em;display:block;margin-bottom:4px}
+.modal-section{background:var(--surface2);border-radius:8px;padding:14px;margin-bottom:14px}
+/* ── Plan Overlay ── */
+#planOverlay{display:none;position:absolute;top:12px;left:0;right:0;z-index:1100;justify-content:center;pointer-events:none}
+#planOverlay.open{display:flex}
+.plan-panel{background:rgba(24,28,36,.95);border:1px solid var(--border);border-radius:8px;padding:12px 16px;min-width:340px;max-width:520px;pointer-events:all;display:flex;flex-direction:column;gap:8px}
+.plan-title{font-size:10px;color:var(--accent);font-weight:600;text-transform:uppercase;letter-spacing:.05em}
+#planStatus{font-size:12px;color:var(--text);min-height:18px}
+.plan-actions{display:flex;gap:6px;align-items:center}
+.plan-name-inp{flex:1;min-width:0;background:var(--bg);border:1px solid var(--border);border-radius:3px;color:var(--text);font-size:11px;padding:4px 7px;font-family:'DM Sans',sans-serif;outline:none}
+.plan-action-btn{background:var(--surface2);border:1px solid var(--border);color:var(--text);border-radius:4px;padding:4px 9px;cursor:pointer;font-size:11px;font-family:'DM Sans',sans-serif;transition:all .15s;white-space:nowrap}
+.plan-action-btn:hover:not(:disabled){background:var(--accent);color:#fff;border-color:var(--accent)}
+.plan-action-btn:disabled{opacity:.35;cursor:not-allowed}
+.plan-action-btn.ok{background:var(--green);color:#fff;border-color:var(--green)}
+.plan-action-btn.ok:hover:not(:disabled){opacity:.85}
+/* ── Tour Manager ── */
+.tour-item{background:var(--bg);border:1px solid var(--border);border-radius:6px;padding:10px 12px;display:flex;justify-content:space-between;align-items:center;gap:10px;transition:border-color .15s}
+.tour-item:hover{border-color:var(--accent)}
+.tour-item-info{flex:1;min-width:0}
+.tour-item-name{font-size:13px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.tour-item-meta{font-size:10px;color:var(--muted);margin-top:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.tour-item-btns{display:flex;gap:5px;flex-shrink:0}
+.tour-load-btn{background:var(--accent);color:#fff;border:none;border-radius:4px;padding:4px 10px;cursor:pointer;font-size:11px;font-weight:600;font-family:'DM Sans',sans-serif;transition:opacity .15s}
+.tour-load-btn:hover{opacity:.85}
+.tour-del-btn{background:transparent;color:var(--red);border:1px solid var(--red);border-radius:4px;padding:4px 8px;cursor:pointer;font-size:11px;font-family:'DM Sans',sans-serif;transition:all .15s}
+.tour-del-btn:hover{background:var(--red);color:#fff}
+/* ── Reroute Panel ── */
+#reroutePanel{display:none;background:var(--surface2);border-bottom:1px solid var(--border);padding:10px 15px;flex-shrink:0}
+#reroutePanel.open{display:block}
+.reroute-row{display:flex;align-items:center;gap:7px;padding:3px 0;font-size:11px;cursor:pointer}
+.reroute-row input[type=checkbox]{cursor:pointer;accent-color:var(--accent)}
+.reroute-actions{display:flex;gap:6px;margin-top:8px}
+.reroute-apply{flex:1;background:var(--accent);color:#fff;border:none;border-radius:4px;padding:5px 10px;cursor:pointer;font-size:11px;font-weight:600;font-family:'DM Sans',sans-serif;transition:opacity .15s}
+.reroute-apply:hover:not(:disabled){opacity:.85}
+.reroute-apply:disabled{opacity:.35;cursor:not-allowed}
+.reroute-cancel{background:transparent;color:var(--muted);border:1px solid var(--border);border-radius:4px;padding:5px 10px;cursor:pointer;font-size:11px;font-family:'DM Sans',sans-serif}
+</style>
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+<link rel="stylesheet" href="https://unpkg.com/leaflet-editable@1.2.0/src/Leaflet.Editable.css">
+</head>
+<body>
+<header>
+  <div class="logo">🚴 Radreise Planer</div>
+  <div class="stats">
+    <div class="stat"><span class="sl">Route</span><span class="sv" id="hdrRoute" style="color:var(--muted)">–</span></div>
+    <div class="stat"><span class="sl">Gesamt</span><span class="sv" id="hdrTotal" style="color:var(--muted)">–</span></div>
+    <div class="stat"><span class="sl">Etappen</span><span class="sv" id="hdrStages" style="color:var(--muted)">–</span></div>
+    <div class="stat"><span class="sl">Radius</span><span class="sv">≤ 15 km</span></div>
+  </div>
+  <button class="hdr-btn" onclick="showTourModal()" title="Neue Tour erstellen oder GPX importieren">+ Neue Tour</button>
+  <button class="hdr-btn" onclick="showTourManager()" title="Touren speichern und laden">💾 Touren</button>
+  <button class="hdr-btn" id="exportBtn" onclick="exportAllGPX()" title="Alle Etappen als GPX exportieren">↓ GPX</button>
+</header>
+<div class="main">
+  <div class="sidebar">
+    <div class="sb-head">
+      <h2>Etappen &amp; Camping</h2>
+      <div style="display:flex;align-items:center;gap:4px;margin-left:auto;margin-right:8px" title="Etappenanzahl anpassen">
+        <button class="adj-btn" onclick="changeStageCount(-1)" style="width:18px;height:18px;font-size:13px" title="Weniger Etappen">−</button>
+        <span id="stageCountDisplay" style="font-family:'DM Mono',monospace;font-size:11px;min-width:20px;text-align:center" title="Anzahl Etappen">10</span>
+        <button class="adj-btn" onclick="changeStageCount(+1)" style="width:18px;height:18px;font-size:13px" title="Mehr Etappen">+</button>
+      </div>
+      <button id="searchAllBtn" onclick="searchAll()">▶ Alle suchen</button>
+    </div>
+    <div class="note-bar" style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+      <span>OSM/Overpass · Radius 15–25 km</span>
+      <span style="color:var(--border)">|</span>
+      <label style="font-size:10px;color:var(--muted);white-space:nowrap">BRouter-Profil:</label>
+      <select id="profileSel" onchange="currentProfile=this.value"
+        style="background:var(--surface2);border:1px solid var(--border);color:var(--text);font-size:10px;border-radius:3px;padding:2px 5px;font-family:'DM Sans',sans-serif;cursor:pointer">
+      </select>
+      <button class="icon-btn" onclick="toggleReroutePanel()" title="Hauptroute mit aktuellem Profil neu berechnen" style="margin-left:auto;white-space:nowrap">↺ Neu routen</button>
+    </div>
+    <!-- Reroute panel -->
+    <div id="reroutePanel">
+      <div style="font-size:11px;font-weight:600;color:var(--text);margin-bottom:4px">↺ Route neu berechnen</div>
+      <div style="font-size:10px;color:var(--muted);margin-bottom:6px">Profil: <span id="rerouteProfileName" style="color:var(--accent)">trekking</span> <span style="color:var(--border)">·</span> Etappengrenzen bleiben</div>
+      <label class="reroute-row" style="border-bottom:1px solid var(--border);padding-bottom:5px;margin-bottom:4px;font-weight:600;font-size:11px">
+        <input type="checkbox" id="rerouteAllCb" onchange="toggleAllReroute(this.checked)" checked> Alle Etappen
+      </label>
+      <div id="rerouteStageList"></div>
+      <div class="reroute-actions">
+        <button class="reroute-cancel" onclick="toggleReroutePanel()">Abbrechen</button>
+        <button class="reroute-apply" id="rerouteApplyBtn" onclick="applyReroute()">↺ Berechnen</button>
+      </div>
+    </div>
+    <div class="progress-bar"><div class="progress-fill" id="pbar"></div></div>
+    <div class="stages" id="stagesEl"></div>
+  </div>
+  <div id="mapWrap">
+    <div id="map"></div>
+    <!-- Plan mode overlay -->
+    <div id="planOverlay">
+      <div class="plan-panel">
+        <div class="plan-title">✏ Tour planen</div>
+        <div id="planStatus">Klicke auf die Karte um den Startpunkt zu setzen</div>
+        <div class="plan-actions">
+          <input id="planRouteNameOverlay" class="plan-name-inp" type="text" placeholder="Tour-Name">
+          <button class="plan-action-btn" id="planUndoBtn" onclick="undoLastPlanWaypoint()" disabled>↩ Zurück</button>
+          <button class="plan-action-btn ok" id="planFinishBtn" onclick="finishPlanRoute()" disabled>✓ Fertig</button>
+          <button class="plan-action-btn" onclick="stopPlanMode();showTourModal()" title="Abbrechen">✕</button>
+        </div>
+      </div>
+    </div>
+    <div class="map-controls">
+      <button class="map-btn" onclick="zoomMap(1)" title="Zoom in">+</button>
+      <button class="map-btn" onclick="zoomMap(-1)" title="Zoom out">−</button>
+      <button class="map-btn" onclick="resetView()" title="Übersicht" style="font-size:13px">⊡</button>
+      <button class="map-btn" id="editModeBtn" onclick="toggleEditMode()" title="Etappengrenzen verschieben" style="font-size:13px">✏</button>
+      <button class="map-btn" id="routeEditBtn" onclick="toggleRouteEditMode()" title="Route bearbeiten: Klick auf Linie → Wegpunkt setzen" style="font-size:15px">⤴</button>
+      <button class="map-btn" id="layerBtn" onclick="switchTileLayer()" title="Karte wechseln" style="font-size:11px;font-weight:700">🗺</button>
+      <button class="map-btn" id="campOsmBtn" onclick="toggleCampOsmLayer()" title="Campingplätze aus OSM einblenden" style="font-size:14px">⛺</button>
+    </div>
+    <div id="campOsmHint" class="camp-osm-hint" style="display:none"></div>
+    <!-- Route-Edit Toolbar -->
+    <div id="routeEditBar" style="display:none;position:absolute;top:12px;left:52px;z-index:1001;background:rgba(24,28,36,.94);border:1px solid var(--border);border-radius:6px;padding:6px 10px;align-items:center;gap:8px;white-space:nowrap">
+      <span style="font-size:10px;color:var(--muted)">Klick auf Karte → Wegpunkt</span>
+      <button id="routeEditUndoBtn" onclick="undoRouteEdit()" disabled
+        style="font-size:10px;font-weight:600;background:transparent;color:var(--muted);border:1px solid var(--border);border-radius:4px;padding:3px 8px;cursor:pointer;font-family:'DM Sans',sans-serif;transition:all .2s">↩ Rückgängig</button>
+      <button id="routeEditRedoBtn" onclick="redoRouteEdit()" disabled
+        style="font-size:10px;font-weight:600;background:transparent;color:var(--muted);border:1px solid var(--border);border-radius:4px;padding:3px 8px;cursor:pointer;font-family:'DM Sans',sans-serif;transition:all .2s">↪ Wiederherstellen</button>
+      <span id="routeEditStatus" style="font-size:10px;color:var(--accent)"></span>
+    </div>
+    <div class="map-legend">
+      <div style="font-size:9px;color:var(--muted);letter-spacing:.05em;margin-bottom:1px">KARTE: <span id="layerLabel">OSM Standard</span></div>
+      <div class="leg-row"><div class="leg-line" style="background:#3d8eff"></div> Hauptroute</div>
+      <div class="leg-row"><div class="leg-line" style="background:#28c76a"></div> Camping-Abstecher</div>
+      <hr class="leg-sep">
+      <div class="leg-row"><div class="leg-dot" style="background:#28c76a"></div> Start / Ziel</div>
+      <div class="leg-row"><div class="leg-dot" style="background:#28c76a"></div> Etappe mit Camping</div>
+      <div class="leg-row"><div class="leg-dot" style="background:#3d8eff"></div> Etappe ohne Camping</div>
+      <hr class="leg-sep">
+      <div class="leg-row"><div class="leg-dot" style="background:#28c76a"></div> Camping — Tagesg. ok</div>
+      <div class="leg-row"><div class="leg-dot" style="background:#f5a623"></div> Camping — unklar</div>
+      <div class="leg-row"><div class="leg-dot" style="background:#ff4d4d"></div> Camping — keine Tagesg.</div>
+      <div class="leg-row" id="legendDrag" style="display:none"><div class="leg-dot" style="background:#f5a623;font-size:8px;font-weight:700;color:#fff;display:flex;align-items:center;justify-content:center">1</div> Etappengrenze — ziehbar</div>
+      <div class="leg-row" id="legendRouteWp" style="display:none"><div class="leg-dot" style="background:#a855f7"></div> Route-Wegpunkt</div>
+      <hr class="leg-sep">
+      <div class="leg-toggle" onclick="toggleRoadLegend()" title="Straßentypen ein-/ausblenden">
+        STRASSENTYPEN <span id="roadLegToggleIcon">▶</span>
+      </div>
+      <div id="roadLegend" style="display:none;margin-top:1px;flex-direction:column;gap:3px">
+        <div class="leg-row"><div class="leg-line" style="background:#e8515a"></div> Autobahn (A)</div>
+        <div class="leg-row"><div class="leg-line" style="background:#e8873c"></div> Bundesstraße (B)</div>
+        <div class="leg-row"><div class="leg-line" style="background:#f0c93e"></div> Landes-/Staatsstr. (L/S)</div>
+        <div class="leg-row"><div class="leg-line" style="background:#f5e77a"></div> Kreisstraße (K)</div>
+        <div class="leg-row"><div class="leg-line" style="background:#e8e8e8;border:1px solid #aaa"></div> Gemeindestraße</div>
+        <div class="leg-row"><div class="leg-line" style="background:#c8a848;background-image:repeating-linear-gradient(90deg,#c8a848 0 6px,transparent 6px 10px)"></div> Feld-/Waldweg</div>
+        <div class="leg-row"><div class="leg-line" style="background:#3abfbf;background-image:repeating-linear-gradient(90deg,#3abfbf 0 6px,transparent 6px 10px)"></div> Radweg</div>
+        <div class="leg-row"><div class="leg-line" style="background:#f0a0a0;background-image:repeating-linear-gradient(90deg,#f0a0a0 0 4px,transparent 4px 8px)"></div> Fuß-/Wanderweg</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Tour Manager Modal -->
+<div id="tourManagerModal" class="tour-modal-bg" onclick="if(event.target===this)hideTourManager()">
+  <div class="tour-modal" style="width:500px;max-width:95vw">
+    <button onclick="hideTourManager()" style="position:absolute;top:12px;right:12px;background:transparent;border:none;color:var(--muted);font-size:20px;cursor:pointer;line-height:1">×</button>
+    <h2 style="font-family:'DM Mono',monospace;font-size:13px;color:var(--accent);margin-bottom:14px;text-transform:uppercase;letter-spacing:.08em">💾 Touren</h2>
+
+    <!-- Save current tour -->
+    <div class="modal-section">
+      <span class="modal-lbl">Aktuelle Tour speichern</span>
+      <div style="display:flex;gap:8px;margin-top:4px">
+        <input id="saveTourNameInp" class="acf-input" type="text" placeholder="Tour-Name"
+          onkeydown="if(event.key==='Enter')saveTourNow()">
+        <button onclick="saveTourNow()"
+          style="background:var(--accent);color:#fff;border:none;border-radius:4px;padding:6px 14px;cursor:pointer;font-size:12px;font-weight:600;font-family:'DM Sans',sans-serif;white-space:nowrap;flex-shrink:0">
+          💾 Speichern
+        </button>
+      </div>
+      <div id="saveTourStatus" style="font-size:10px;margin-top:5px;min-height:14px;color:var(--muted)"></div>
+    </div>
+
+    <!-- Saved tours list -->
+    <div style="font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.05em;margin-bottom:8px">Gespeicherte Touren</div>
+    <div id="tourManagerList" style="display:flex;flex-direction:column;gap:6px;max-height:360px;overflow-y:auto">
+      <div style="font-size:11px;color:var(--muted);font-style:italic">Wird geladen…</div>
+    </div>
+
+    <div style="margin-top:14px">
+      <button class="modal-btn-cancel" style="width:100%" onclick="hideTourManager()">Schließen</button>
+    </div>
+  </div>
+</div>
+
+<!-- Tour Setup Modal -->
+<div id="tourModal" class="tour-modal-bg" onclick="if(event.target===this)hideTourModal()">
+  <div class="tour-modal">
+    <button onclick="hideTourModal()" style="position:absolute;top:12px;right:12px;background:transparent;border:none;color:var(--muted);font-size:20px;cursor:pointer;line-height:1">×</button>
+    <h2 style="font-family:'DM Mono',monospace;font-size:13px;color:var(--accent);margin-bottom:14px;text-transform:uppercase;letter-spacing:.08em">🚴 Neue Tour</h2>
+    <!-- Tabs -->
+    <div class="tour-tabs">
+      <button id="tabGPX" class="tour-tab active" onclick="switchTourTab('gpx')">📁 GPX hochladen</button>
+      <button id="tabManual" class="tour-tab" onclick="switchTourTab('manual')">✏ Manuell planen</button>
+    </div>
+    <!-- GPX Tab Content -->
+    <div id="tabGPXContent">
+      <div class="gpx-drop" id="gpxDrop"
+        onclick="document.getElementById('gpxFileInput').click()"
+        ondragover="event.preventDefault();this.classList.add('drag')"
+        ondragleave="this.classList.remove('drag')"
+        ondrop="event.preventDefault();this.classList.remove('drag');loadGPXFile(event.dataTransfer.files[0])">
+        <div style="font-size:28px;margin-bottom:6px">📂</div>
+        <div style="font-size:12px;color:var(--text);margin-bottom:3px">GPX-Datei hier ablegen</div>
+        <div style="font-size:10px;color:var(--muted)">oder klicken zum Auswählen</div>
+      </div>
+      <input id="gpxFileInput" type="file" accept=".gpx" style="display:none" onchange="loadGPXFile(this.files[0])">
+      <div id="gpxStatus" style="font-size:11px;color:var(--muted);margin-bottom:10px;min-height:16px"></div>
+      <span class="modal-lbl">Tour-Name</span>
+      <input id="gpxPreviewName" class="acf-input" type="text" placeholder="Name der Tour">
+    </div>
+    <!-- Manual Tab Content -->
+    <div id="tabManualContent" style="display:none">
+      <div class="modal-section" style="font-size:12px;line-height:1.8;color:var(--text)">
+        <strong>So funktioniert's:</strong><br>
+        1. Klicke auf "Planen beginnen"<br>
+        2. Setze Wegpunkte auf der Karte durch Klicken<br>
+        3. BRouter berechnet die Route automatisch<br>
+        4. Klicke "Fertig" wenn die Route stimmt
+      </div>
+      <span class="modal-lbl" style="margin-top:10px">Tour-Name</span>
+      <input id="planRouteName" class="acf-input" type="text" placeholder="z.B. Meine Radreise">
+    </div>
+    <!-- Actions -->
+    <div class="modal-actions">
+      <button class="modal-btn-cancel" onclick="hideTourModal()">Abbrechen</button>
+      <button class="modal-btn-ok" id="gpxStartBtn" onclick="startGPXTour()" disabled>Tour starten →</button>
+      <button class="modal-btn-ok" id="planStartBtn" onclick="startPlanMode()" style="display:none">▶ Planen beginnen</button>
+    </div>
+  </div>
+</div>
+
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script src="https://unpkg.com/leaflet-editable@1.2.0/src/Leaflet.Editable.js"></script>
+<script>
+// ─────────────────────────────────────────────────────────────────────────────
+// DATA
+// ─────────────────────────────────────────────────────────────────────────────
+let TOTAL_KM = 0;
+let BASE_KM_INT = 100;
+let NUM_STAGES = 10;
+let ROUTE_NAME = '';
+
+let STAGE_ENDS = [];
+
+let ROUTE_PTS = [];
+let ROUTE_ELEVATIONS = [];
+
+// ─────────────────────────────────────────────────────────────────────────────
+// STATE
+// ─────────────────────────────────────────────────────────────────────────────
+function createStage(i) {
+  return {
+    i,
+    adjustKm: 0,
+    get km() {
+      if (this.campTarget) return Math.round(this.campTarget.km * 10) / 10;
+      if (this.campFromPrev) return Math.round(this.campFromPrev.km * 10) / 10;
+      return i < NUM_STAGES - 1 ? BASE_KM_INT + this.adjustKm : Math.round(restKm());
+    },
+    campsites: null,
+    searching: false,
+    error: null,
+    autoAdjMsg: null,
+    campTarget: null,    // {ci, routePts:[[lat,lon],...], km}
+    campFromPrev: null,  // {routePts, km} – vom Camp der Vorgänger-Etappe hierher
+    routeLoading: false,
+    routingGen: 0        // incremented on every cancel/start; async routing aborts if changed
+  };
+}
+
+let stages = Array.from({length: NUM_STAGES}, (_, i) => createStage(i));
+
+function rebuildStages() {
+  stages = Array.from({length: NUM_STAGES}, (_, i) => createStage(i));
+}
+
+function stageStartKm(i) { return stages.slice(0,i).reduce((s,x)=>s+x.km, 0); }
+function stageEndKm(i)   { return stageStartKm(i) + stages[i].km; }
+function restKm()        { return TOTAL_KM - stages.slice(0, NUM_STAGES - 1).reduce((s,x)=>s+x.km, 0); }
+
+// Pure main-route km to the END of stage i — ignores camp-detour extra distance
+function stageMainBoundaryKm(i) {
+  let km = 0;
+  for (let j = 0; j <= i; j++) km += BASE_KM_INT + stages[j].adjustKm;
+  return Math.min(km, TOTAL_KM);
+}
+
+// Compute STAGE_ENDS positions from route (used for custom routes)
+function computeStageEnds(stageNames) {
+  if (!ROUTE_PTS.length || !routeCumDist.length) return;
+  STAGE_ENDS = [];
+  const segKm = TOTAL_KM / NUM_STAGES;
+  for (let i = 0; i < NUM_STAGES; i++) {
+    const km = Math.min((i + 1) * segKm, TOTAL_KM);
+    const idx = Math.min(routeIdxAtKm(km), ROUTE_PTS.length - 1);
+    const [lat, lon] = ROUTE_PTS[idx];
+    STAGE_ENDS.push({ lat, lon, name: stageNames?.[i] || `Etappe ${i + 1}` });
+  }
+}
+
+function updateHeaderStats() {
+  const loaded = ROUTE_NAME && TOTAL_KM > 0;
+  const r = document.getElementById('hdrRoute');
+  const t = document.getElementById('hdrTotal');
+  const s = document.getElementById('hdrStages');
+  r.textContent = loaded ? ROUTE_NAME : '–';
+  t.textContent = loaded ? TOTAL_KM.toLocaleString('de-DE', {maximumFractionDigits:1}) + ' km' : '–';
+  s.textContent = loaded ? NUM_STAGES + ' × ~' + Math.round(TOTAL_KM / NUM_STAGES) + ' km' : '–';
+  const dim = loaded ? '' : 'var(--muted)';
+  r.style.color = dim; t.style.color = dim; s.style.color = dim;
+  const sc = document.getElementById('stageCountDisplay');
+  if (sc) sc.textContent = NUM_STAGES;
+}
+
+function changeStageCount(delta) {
+  if (!ROUTE_PTS.length) return;
+  const newCount = Math.max(1, Math.min(30, NUM_STAGES + delta));
+  if (newCount === NUM_STAGES) return;
+  NUM_STAGES = newCount;
+  BASE_KM_INT = Math.round(TOTAL_KM / NUM_STAGES) || 1;
+  rebuildStages();
+  computeStageEnds();
+  updateHeaderStats();
+  buildMainRouteLayer();
+  drawCustomRoutes(); render(); drawMarkers();
+  saveRouteData();
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// LEAFLET MAP
+// ─────────────────────────────────────────────────────────────────────────────
+let leafletMap, routeLayer;
+let _mainRoutePolylines = [];
+let stageMarkers = [], campsiteMarkers = [], customRouteLayers = [], wpMarkers = [];
+let editMode = false;
+let manualCamps = {};   // {si: [{name, lat, lon, ...}]}
+let addingCampFor = null;
+let expandedCampLists = new Set(); // stage indices where user expanded hidden camps
+let currentTourId   = null;   // ID of the currently loaded/saved tour (for overwrite)
+let currentTourName = null;   // Name under which it was last saved (change → new entry)
+
+function markerIcon(color, label) {
+  return L.divIcon({
+    className: '',
+    html: `<div style="width:20px;height:20px;background:${color};border:2.5px solid #fff;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:9px;font-weight:700;color:#fff;font-family:'DM Mono',monospace;box-shadow:0 1px 4px rgba(0,0,0,.35)">${label}</div>`,
+    iconSize: [20, 20],
+    iconAnchor: [10, 10]
+  });
+}
+
+function waypointIcon(isEndpoint) {
+  const s = isEndpoint ? 16 : 12;
+  return L.divIcon({
+    className: '',
+    html: `<div style="width:${s}px;height:${s}px;background:#fff;border:2.5px solid #3d8eff;border-radius:50%;cursor:move;box-shadow:0 1px 4px rgba(0,0,0,.5)"></div>`,
+    iconSize: [s, s], iconAnchor: [s/2, s/2]
+  });
+}
+
+const TILE_LAYERS = [
+  {
+    id: 'osm',
+    label: 'OSM Standard',
+    url: 'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',
+    attribution: '© <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>',
+    maxZoom: 19
+  },
+  {
+    id: 'cyclosm',
+    label: 'CyclOSM',
+    url: 'https://{s}.tile-cyclosm.openstreetmap.fr/cyclosm/{z}/{x}/{y}.png',
+    attribution: '© <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> · <a href="https://www.cyclosm.org/">CyclOSM</a>',
+    maxZoom: 20
+  },
+  {
+    id: 'topo',
+    label: 'Topo',
+    url: 'https://{s}.tile.opentopomap.org/{z}/{x}/{y}.png',
+    attribution: '© <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> · <a href="https://opentopomap.org/">OpenTopoMap</a>',
+    maxZoom: 17
+  }
+];
+let _currentTileIdx = 0;
+let _tileLayer = null;
+
+function initMap() {
+  leafletMap = L.map('map', { zoomControl: false });
+  _tileLayer = L.tileLayer(TILE_LAYERS[0].url, {
+    attribution: TILE_LAYERS[0].attribution,
+    maxZoom: TILE_LAYERS[0].maxZoom
+  }).addTo(leafletMap);
+  _updateLayerBtn();
+
+  L.control.scale({ imperial: false, metric: true, position: 'bottomright' }).addTo(leafletMap);
+
+  // Campingplatz-Overlay-Layer (ganz oben)
+  _campOsmLayerGroup = L.layerGroup().addTo(leafletMap);
+  leafletMap.on('moveend zoomend', () => { if (_campOsmEnabled) _scheduleCampOsm(); });
+
+  buildMainRouteLayer();
+  if (ROUTE_PTS.length)
+    leafletMap.fitBounds(L.polyline(ROUTE_PTS).getBounds(), { padding: [40, 40] });
+  else
+    leafletMap.setView([51.5, 10.5], 6);  // Fallback: Zentrum Deutschland
+  drawMarkers();
+}
+
+// ── Distance from point to line segment (in hav-km, good enough for proximity)
+function distPtSeg(lat, lon, aLat, aLon, bLat, bLon) {
+  const dx = bLat - aLat, dy = bLon - aLon;
+  if (dx === 0 && dy === 0) return hav(lat, lon, aLat, aLon);
+  const t = Math.max(0, Math.min(1, ((lat-aLat)*dx + (lon-aLon)*dy) / (dx*dx + dy*dy)));
+  return hav(lat, lon, aLat + t*dx, aLon + t*dy);
+}
+
+// Insert newPt into waypoints array at the segment closest to it
+function insertWaypoint(waypoints, lat, lon) {
+  let best = 0, bestD = Infinity;
+  for (let i = 0; i < waypoints.length - 1; i++) {
+    const d = distPtSeg(lat, lon, waypoints[i][0], waypoints[i][1], waypoints[i+1][0], waypoints[i+1][1]);
+    if (d < bestD) { bestD = d; best = i; }
+  }
+  waypoints.splice(best + 1, 0, [lat, lon]);
+}
+
+function buildMainRouteLayer() {
+  _mainRoutePolylines.forEach(l => leafletMap.removeLayer(l));
+  _mainRoutePolylines = [];
+  if (!ROUTE_PTS.length) return;
+
+  const orphaned = [];
+  stages.forEach((st, si) => {
+    if (st.campTarget != null && si < NUM_STAGES - 1 && stages[si + 1]?.campFromPrev != null) {
+      const from = st.campTarget.branchIdx;
+      const to   = stages[si + 1].campFromPrev.rejoinIdx;
+      if (Number.isFinite(from) && Number.isFinite(to) && from < to)
+        orphaned.push([from, to]);
+    }
+  });
+
+  orphaned.sort((a, b) => a[0] - b[0]);
+  const opts = { color: '#3d8eff', weight: 3, opacity: 0.7 };
+  let prev = 0;
+  for (const [from, to] of orphaned) {
+    if (prev < from)
+      _mainRoutePolylines.push(L.polyline(ROUTE_PTS.slice(prev, from + 1), opts).addTo(leafletMap));
+    prev = to;
+  }
+  _mainRoutePolylines.push(L.polyline(ROUTE_PTS.slice(prev), opts).addTo(leafletMap));
+}
+
+function drawCustomRoutes() {
+  customRouteLayers.forEach(l => leafletMap.removeLayer(l));
+  customRouteLayers = [];
+  clearWpMarkers();
+
+  buildMainRouteLayer();
+
+  stages.forEach((st, si) => {
+    if (st.campTarget?.routePts?.length) {
+      // Nur BRouter-Detour zeichnen: Abzweigpunkt → Camp (Hauptroutenabschnitt bleibt blau)
+      const stStartIdx = si > 0 ? routeIdxAtKm(stageMainBoundaryKm(si - 1)) : 0;
+      const detourPts = st.campTarget.routePts.slice(st.campTarget.branchIdx - stStartIdx);
+      const l = L.polyline(detourPts, { color: '#28c76a', weight: 4, opacity: 0.95 });
+      l.addTo(leafletMap);
+      l.on('click', e => { if (editMode) { insertWaypoint(st.campTarget.waypoints, e.latlng.lat, e.latlng.lng); rerouteCustom(si, 'target'); } });
+      customRouteLayers.push(l);
+    }
+    if (st.campFromPrev?.routePts?.length) {
+      // Nur BRouter-Return zeichnen: Camp → Wiedereintrittspunkt (Hauptroutenabschnitt bleibt blau)
+      const stEndIdx = si < NUM_STAGES - 1 ? routeIdxAtKm(stageMainBoundaryKm(si)) : ROUTE_PTS.length - 1;
+      const fp = st.campFromPrev;
+      const returnLen = fp.routePts.length - (stEndIdx - fp.rejoinIdx);
+      const returnPts = fp.routePts.slice(0, Math.max(1, returnLen));
+      const l = L.polyline(returnPts, { color: '#28c76a', weight: 4, opacity: 0.95 });
+      l.addTo(leafletMap);
+      l.on('click', e => { if (editMode) { insertWaypoint(st.campFromPrev.waypoints, e.latlng.lat, e.latlng.lng); rerouteCustom(si, 'fromPrev'); } });
+      customRouteLayers.push(l);
+    }
+  });
+
+  if (editMode) showWpMarkers();
+}
+
+function toggleEditMode() {
+  editMode = !editMode;
+  document.getElementById('editModeBtn').classList.toggle('active', editMode);
+  document.getElementById('legendDrag').style.display = editMode ? '' : 'none';
+  // Rebuild markers so numbered stage markers become draggable (orange) in edit mode
+  drawMarkers();
+  if (editMode) showWpMarkers();
+  else          clearWpMarkers();
+}
+
+function clearWpMarkers() {
+  wpMarkers.forEach(m => leafletMap.removeLayer(m));
+  wpMarkers = [];
+}
+
+function showWpMarkers() {
+  clearWpMarkers();
+  stages.forEach((st, si) => {
+    if (st.campTarget?.waypoints) addWpMarkersFor(si, 'target', st.campTarget.waypoints);
+    if (st.campFromPrev?.waypoints) addWpMarkersFor(si, 'fromPrev', st.campFromPrev.waypoints);
+  });
+}
+
+function addWpMarkersFor(si, type, waypoints) {
+  waypoints.forEach((wp, wi) => {
+    const isEnd = wi === 0 || wi === waypoints.length - 1;
+    const m = L.marker([wp[0], wp[1]], { icon: waypointIcon(isEnd), draggable: true, zIndexOffset: 500 });
+    m.addTo(leafletMap);
+    m.on('drag', e => { waypoints[wi] = [e.latlng.lat, e.latlng.lng]; });
+    m.on('dragend', () => rerouteCustom(si, type));
+    m.on('dblclick', e => {
+      L.DomEvent.stopPropagation(e);
+      if (waypoints.length > 2) { waypoints.splice(wi, 1); rerouteCustom(si, type); }
+    });
+    m.bindTooltip(wi === 0 ? 'Startpunkt' : wi === waypoints.length-1 ? 'Zielpunkt' : 'Wegpunkt · Doppelklick zum Löschen', { direction: 'top', offset: [0, -10] });
+    wpMarkers.push(m);
+  });
+}
+
+async function rerouteCustom(si, type) {
+  const obj = type === 'target' ? stages[si].campTarget : stages[si].campFromPrev;
+  if (!obj?.waypoints?.length) return;
+  try {
+    const { pts: newBrouterPts } = await brouterRoute(obj.waypoints);
+    obj.brouterPts = newBrouterPts;
+    const stStartIdx = si > 0 ? routeIdxAtKm(stageMainBoundaryKm(si - 1)) : 0;
+    const stEndIdx   = si < NUM_STAGES - 1 ? routeIdxAtKm(stageMainBoundaryKm(si)) : ROUTE_PTS.length - 1;
+    if (type === 'target') {
+      // Branchpunkt anhand des (möglicherweise verschobenen) ersten Wegpunkts neu bestimmen
+      obj.branchIdx = nearestRoutePt(obj.waypoints[0][0], obj.waypoints[0][1], stStartIdx, stEndIdx);
+      obj.routePts = [...ROUTE_PTS.slice(stStartIdx, obj.branchIdx + 1), ...newBrouterPts.slice(1)];
+    } else {
+      // Wiedereintrittspunkt anhand des (möglicherweise verschobenen) letzten Wegpunkts neu bestimmen
+      const lastWp = obj.waypoints[obj.waypoints.length - 1];
+      obj.rejoinIdx = nearestRoutePt(lastWp[0], lastWp[1], stStartIdx, stEndIdx);
+      obj.routePts = [...newBrouterPts, ...ROUTE_PTS.slice(obj.rejoinIdx + 1, stEndIdx + 1)];
+    }
+    obj.km = ptsKm(obj.routePts);
+  } catch(e) {
+    console.warn('rerouteCustom:', e.message);
+  }
+  drawCustomRoutes(); render();
+  saveTargets();
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// TARGETS PERSISTENZ
+// ─────────────────────────────────────────────────────────────────────────────
+async function saveTargets() {
+  const data = {};
+  stages.forEach((st, si) => {
+    if (!st.campTarget) return;
+    const isManual = !!st.campTarget._manual;
+    const camp = isManual
+      ? manualCamps[si]?.[st.campTarget._manualIdx]
+      : st.campsites?.[st.campTarget.ci];
+    data[si] = {
+      campsite: camp ? { name: camp.name, lat: camp.lat, lon: camp.lon, address: camp.address || '', dayguests: camp.dayguests, website: camp.website || null, dist_km: camp.dist_km || null } : null,
+      isManual,
+      manualIdx: st.campTarget._manualIdx ?? null,
+      tocamp: { ci: st.campTarget.ci, waypoints: st.campTarget.waypoints, routePts: st.campTarget.routePts, km: st.campTarget.km, branchIdx: st.campTarget.branchIdx },
+      fromPrev: si < NUM_STAGES - 1 && stages[si+1].campFromPrev ? { waypoints: stages[si+1].campFromPrev.waypoints, routePts: stages[si+1].campFromPrev.routePts, km: stages[si+1].campFromPrev.km, rejoinIdx: stages[si+1].campFromPrev.rejoinIdx } : null
+    };
+  });
+  try { await fetch('/api/targets', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(data) }); } catch {}
+}
+
+async function loadTargets() {
+  try {
+    const r = await fetch('/api/targets');
+    if (!r.ok) return;
+    const data = await r.json();
+    Object.entries(data).forEach(([siStr, saved]) => {
+      const si = parseInt(siStr);
+      if (isNaN(si) || si < 0 || si >= NUM_STAGES) return;
+      // Restore campsite so the sidebar can display it
+      if (saved.campsite) {
+        stages[si].campsites = [{ ...saved.campsite, _restored: true }];
+      }
+      if (saved.tocamp) {
+        stages[si].campTarget = {
+          ci: saved.isManual ? null : 0,
+          _manual: !!saved.isManual,
+          _manualIdx: saved.isManual ? (saved.manualIdx ?? null) : undefined,
+          ...saved.tocamp
+        };
+      }
+      if (saved.fromPrev && si < NUM_STAGES - 1) {
+        stages[si+1].campFromPrev = { ...saved.fromPrev };
+      }
+    });
+  } catch {}
+}
+
+function drawMarkers() {
+  stageMarkers.forEach(m => leafletMap.removeLayer(m));
+  campsiteMarkers.forEach(m => leafletMap.removeLayer(m));
+  stageMarkers = [];
+  campsiteMarkers = [];
+
+  function addM(lat, lon, color, label, tip, arr) {
+    const m = L.marker([lat, lon], { icon: markerIcon(color, label) })
+      .bindTooltip(tip, { sticky: true, direction: 'top', offset: [0, -12] });
+    m.addTo(leafletMap);
+    arr.push(m);
+  }
+
+  const startPt = ROUTE_PTS.length ? ROUTE_PTS[0] : [51.773091, 6.844905];
+  const startName = ROUTE_NAME.split('→')[0]?.trim() || 'Start';
+  addM(startPt[0], startPt[1], '#28c76a', 'S', `Start: ${startName}`, stageMarkers);
+
+  STAGE_ENDS.slice(0, NUM_STAGES - 1).forEach((ep, i) => {
+    const st = stages[i];
+    const hasCamps = st.campsites && st.campsites.length > 0;
+    const draggable = editMode;   // always draggable in edit mode — no lock by campTarget
+    const color = draggable ? '#f5a623' : (hasCamps ? '#28c76a' : '#3d8eff');
+    const size  = draggable ? 26 : 20;
+    const icon  = L.divIcon({
+      className: '',
+      html: `<div style="width:${size}px;height:${size}px;background:${color};border:2.5px solid #fff;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:${draggable?10:9}px;font-weight:700;color:#fff;font-family:'DM Mono',monospace;box-shadow:0 2px 5px rgba(0,0,0,.4);${draggable?'cursor:grab;outline:3px solid rgba(245,166,35,.4);outline-offset:3px':''}">${i+1}</div>`,
+      iconSize: [size, size], iconAnchor: [size/2, size/2]
+    });
+    // Compute actual marker position from adjusted km (not hardcoded STAGE_ENDS)
+    let markerLat = ep.lat, markerLon = ep.lon;
+    if (ROUTE_PTS.length) {
+      const bKm = stageMainBoundaryKm(i);
+      const idx = Math.min(routeIdxAtKm(bKm), ROUTE_PTS.length - 1);
+      [markerLat, markerLon] = ROUTE_PTS[idx];
+    }
+    // If a camp target is set, move the endpoint marker to the campsite
+    let campName = null;
+    if (st.campTarget) {
+      const c = st.campTarget._manual
+        ? manualCamps[i]?.[st.campTarget._manualIdx]
+        : st.campsites?.[st.campTarget.ci];
+      if (c?.lat && c?.lon) { markerLat = c.lat; markerLon = c.lon; campName = c.name; }
+    }
+    const prevBndKm = i > 0 ? stageMainBoundaryKm(i - 1) : 0;
+    const curBndKm  = stageMainBoundaryKm(i);
+    const tip = draggable
+      ? `↔ Etappengrenze ${i+1}|${i+2} verschieben<br>Aktuell: ${Math.round(prevBndKm)}–${Math.round(curBndKm)} km`
+      : `Etappe ${i+1}: ${campName ? `⛺ ${campName}` : ep.name}<br>${Math.round(prevBndKm)}–${Math.round(curBndKm)} km`;
+    const m = L.marker([markerLat, markerLon], { icon, draggable, zIndexOffset: draggable ? 1000 : 0 })
+      .bindTooltip(tip, { sticky: true, direction: 'top', offset: [0, -12] });
+    if (draggable) {
+      m.on('dragend', e => {
+        const { lat, lng } = e.target.getLatLng();
+        const prevBoundaryKm = i > 0 ? stageMainBoundaryKm(i - 1) : 0;
+        // Allow snapping anywhere between the two adjacent stage boundaries so
+        // the marker always lands where the user dropped it (not at a ±70 km cap).
+        const nextBoundaryKm = i + 1 < NUM_STAGES - 1 ? stageMainBoundaryKm(i + 1) : TOTAL_KM;
+        const sStart  = routeIdxAtKm(prevBoundaryKm);
+        const sEnd    = routeIdxAtKm(nextBoundaryKm);
+        const nearIdx = nearestRoutePt(lat, lng, sStart, sEnd);
+        const prevRouteIdx = routeIdxAtKm(prevBoundaryKm);
+        const newStageKm   = routeCumDist[nearIdx] - routeCumDist[prevRouteIdx];
+        if (newStageKm < 20 || newStageKm > 220) {
+          // Out of valid range — snap back; defer to let Leaflet finish drag cleanup first
+          setTimeout(() => { drawCustomRoutes(); render(); drawMarkers(); }, 0);
+          return;
+        }
+        const oldStageKm = BASE_KM_INT + stages[i].adjustKm;
+        const delta      = oldStageKm - newStageKm;
+        if (i + 1 < NUM_STAGES - 1) {
+          const nextNewKm = BASE_KM_INT + stages[i + 1].adjustKm + delta;
+          if (nextNewKm < 20 || nextNewKm > 220) {
+            setTimeout(() => { drawCustomRoutes(); render(); drawMarkers(); }, 0);
+            return;
+          }
+          stages[i + 1].adjustKm += delta;
+        }
+        stages[i].adjustKm = newStageKm - BASE_KM_INT;
+        stages[i].campTarget = null;
+        if (i + 1 < NUM_STAGES) stages[i + 1].campFromPrev = null;
+        // Defer redraw so Leaflet can finish cleaning up the drag DOM before we
+        // remove and recreate markers (prevents the ghost yellow-dot artifact).
+        setTimeout(() => { drawCustomRoutes(); render(); drawMarkers(); saveTargets(); }, 0);
+      });
+    }
+    m.addTo(leafletMap);
+    stageMarkers.push(m);
+  });
+
+  const endPt = ROUTE_PTS.length ? ROUTE_PTS[ROUTE_PTS.length - 1] : [50.869326, 14.822321];
+  const endName = ROUTE_NAME.split('→')[1]?.trim() || STAGE_ENDS[NUM_STAGES - 1]?.name || 'Ziel';
+  addM(endPt[0], endPt[1], '#ff6b35', 'Z', `Ziel: ${endName}`, stageMarkers);
+
+  stages.forEach((st, si) => {
+    if (!st.campsites) return;
+    st.campsites.forEach((c, ci) => {
+      if (!c.lat || !c.lon) return;
+      const isActive = activeCamp?.si===si && activeCamp?.ci===ci;
+      const col = c.dayguests === 'yes' ? '#28c76a' : c.dayguests === 'no' ? '#ff4d4d' : '#f5a623';
+      const tip = `⛺ ${c.name}${c.lat ? '<br>' + liveDistKm(si, c).toFixed(1) + ' km' : ''}` +
+        `<br>${c.dayguests === 'yes' ? '✓ Tagesgäste ok' : c.dayguests === 'no' ? '✗ Keine Tagesgäste' : '? Unklar'}` +
+        `${c.address ? '<br>' + c.address : ''}`;
+      const dot = L.circleMarker([c.lat, c.lon], {
+        radius: isActive ? 13 : 6,
+        fillColor: col,
+        color: isActive ? '#fff' : 'rgba(0,0,0,.3)',
+        weight: isActive ? 3 : 1,
+        fillOpacity: 1
+      }).bindTooltip(tip, { sticky: true, direction: 'top' });
+      dot.on('click', e => { L.DomEvent.stopPropagation(e); selectCamp(si, ci); });
+      dot.addTo(leafletMap);
+      campsiteMarkers.push(dot);
+    });
+  });
+
+  // Manual camp markers
+  Object.entries(manualCamps).forEach(([siStr, camps]) => {
+    const si = parseInt(siStr);
+    (camps || []).forEach((c, midx) => {
+      if (!c.lat || !c.lon) return;
+      const isTarget = stages[si]?.campTarget?._manual && stages[si].campTarget._manualIdx === midx;
+      const col = c.dayguests === 'yes' ? '#28c76a' : c.dayguests === 'no' ? '#ff4d4d' : '#f5a623';
+      const tip = `✋ ${c.name}${c.note ? '<br>' + c.note : ''}<br>${c.dayguests === 'yes' ? '✓ Tagesgäste ok' : c.dayguests === 'no' ? '✗ Keine Tagesgäste' : '? Unklar'}<br><em>Manuell hinzugefügt</em>`;
+      const dot = L.circleMarker([c.lat, c.lon], {
+        radius: isTarget ? 13 : 7,
+        fillColor: col,
+        color: isTarget ? '#fff' : '#3d8eff',
+        weight: isTarget ? 3 : 2,
+        fillOpacity: 1
+      }).bindTooltip(tip, { sticky: true, direction: 'top' });
+      dot.addTo(leafletMap);
+      campsiteMarkers.push(dot);
+    });
+  });
+
+}
+
+function zoomMap(delta) { delta > 0 ? leafletMap.zoomIn() : leafletMap.zoomOut(); }
+function resetView() {
+  if (ROUTE_PTS.length) leafletMap.fitBounds(L.polyline(ROUTE_PTS).getBounds(), { padding: [40, 40] });
+}
+function toggleRoadLegend() {
+  const el   = document.getElementById('roadLegend');
+  const icon = document.getElementById('roadLegToggleIcon');
+  if (!el) return;
+  const open = el.style.display === 'flex';
+  el.style.display   = open ? 'none' : 'flex';
+  el.style.flexDirection = 'column';
+  if (icon) icon.textContent = open ? '▶' : '▼';
+}
+
+function switchTileLayer() {
+  if (!leafletMap || !_tileLayer) return;
+  _currentTileIdx = (_currentTileIdx + 1) % TILE_LAYERS.length;
+  const def = TILE_LAYERS[_currentTileIdx];
+  leafletMap.removeLayer(_tileLayer);
+  _tileLayer = L.tileLayer(def.url, { attribution: def.attribution, maxZoom: def.maxZoom }).addTo(leafletMap);
+  _tileLayer.bringToBack();
+  _updateLayerBtn();
+}
+function _updateLayerBtn() {
+  const btn  = document.getElementById('layerBtn');
+  const next = TILE_LAYERS[(_currentTileIdx + 1) % TILE_LAYERS.length];
+  if (btn) btn.title = `Karte wechseln → ${next.label}`;
+  // Show current layer name in legend
+  const lbl = document.getElementById('layerLabel');
+  if (lbl) lbl.textContent = TILE_LAYERS[_currentTileIdx].label;
+}
+
+function focusOnPoint(lat, lon) {
+  leafletMap.flyTo([lat, lon], 11, { duration: 0.6 });
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// MANUAL CAMPS
+// ─────────────────────────────────────────────────────────────────────────────
+async function loadManualCamps() {
+  try { const r = await fetch('/api/manual-camps'); if (r.ok) manualCamps = await r.json(); } catch {}
+}
+async function saveManualCamps() {
+  try { await fetch('/api/manual-camps', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(manualCamps) }); } catch {}
+}
+
+function startAddCamp(si, ev) {
+  ev.stopPropagation();
+  addingCampFor = addingCampFor === si ? null : si;
+  render();
+  if (addingCampFor !== null)
+    setTimeout(() => document.getElementById(`acf-name-${si}`)?.focus(), 60);
+}
+function cancelAddCamp(ev) {
+  if (ev) ev.stopPropagation();
+  addingCampFor = null;
+  render();
+}
+function saveNewCamp(si, ev) {
+  if (ev) ev.stopPropagation();
+  const name = document.getElementById(`acf-name-${si}`)?.value.trim();
+  const lat  = parseFloat(document.getElementById(`acf-lat-${si}`)?.value);
+  const lon  = parseFloat(document.getElementById(`acf-lon-${si}`)?.value);
+  const dg   = document.getElementById(`acf-dg-${si}`)?.value || 'unclear';
+  const url  = document.getElementById(`acf-url-${si}`)?.value.trim() || null;
+  const note = document.getElementById(`acf-note-${si}`)?.value.trim() || null;
+  if (!name) { alert('Name ist erforderlich'); return; }
+  if (isNaN(lat) || lat < -90 || lat > 90 || isNaN(lon) || lon < -180 || lon > 180) {
+    alert('Bitte gültige Koordinaten eingeben (Lat: -90–90, Lon: -180–180)'); return;
+  }
+  if (!manualCamps[si]) manualCamps[si] = [];
+  manualCamps[si].push({ name, lat, lon, address: '', website: url, dayguests: dg, note, dist_km: null, _manual: true });
+  addingCampFor = null;
+  saveManualCamps();
+  render(); drawMarkers();
+}
+async function deleteManualCamp(si, midx, ev) {
+  if (ev) ev.stopPropagation();
+  const c = manualCamps[si]?.[midx];
+  if (!c) return;
+  if (!confirm(`"${c.name}" löschen?`)) return;
+  // Cancel any in-flight routing and clear camp state if this was the active target
+  stages[si].routingGen++;       // invalidate any in-flight routing regardless
+  stages[si].routeLoading = false;
+  if (stages[si].campTarget?._manual && stages[si].campTarget._manualIdx === midx) {
+    stages[si].campTarget = null;
+    if (si < NUM_STAGES - 1) stages[si+1].campFromPrev = null;
+    drawCustomRoutes();
+  }
+  manualCamps[si].splice(midx, 1);
+  if (!manualCamps[si].length) delete manualCamps[si];
+  await saveManualCamps(); await saveTargets();
+  render(); drawMarkers();
+}
+async function setManualAsTarget(si, midx, ev) {
+  if (ev) ev.stopPropagation();
+  const c = manualCamps[si]?.[midx];
+  if (!c) return;
+  // Toggle off
+  if (stages[si].campTarget?._manual && stages[si].campTarget._manualIdx === midx) {
+    stages[si].routingGen++;          // invalidate any in-flight routing
+    stages[si].routeLoading = false;  // cancel spinner if routing was in progress
+    stages[si].campTarget = null;
+    if (si < NUM_STAGES - 1) stages[si+1].campFromPrev = null;
+    expandedCampLists.delete(si);
+    drawCustomRoutes(); render(); drawMarkers(); await saveTargets(); return;
+  }
+  // Clear any previously active camp state before starting new routing
+  stages[si].campTarget = null;
+  if (si < NUM_STAGES - 1) stages[si+1].campFromPrev = null;
+  const gen = ++stages[si].routingGen; // capture generation for this routing attempt
+
+  stages[si].routeLoading = true; stages[si].error = null; render();
+  try {
+    const stStartIdx = si > 0 ? routeIdxAtKm(stageMainBoundaryKm(si - 1)) : 0;
+    const stEndIdx   = si < NUM_STAGES - 1 ? routeIdxAtKm(stageMainBoundaryKm(si)) : ROUTE_PTS.length - 1;
+    const branchIdx  = nearestRoutePt(c.lat, c.lon, stStartIdx, stEndIdx);
+    const branchPt   = ROUTE_PTS[branchIdx];
+    const wpTocamp   = [branchPt, [c.lat, c.lon]];
+    const { pts: detourPts }  = await brouterRoute(wpTocamp);
+
+    if (stages[si].routingGen !== gen) { stages[si].routeLoading = false; return; } // cancelled while routing
+
+    const stagePts   = [...ROUTE_PTS.slice(stStartIdx, branchIdx + 1), ...detourPts.slice(1)];
+    stages[si].campTarget = { ci: null, _manual: true, _manualIdx: midx, waypoints: wpTocamp, brouterPts: detourPts, routePts: stagePts, km: ptsKm(stagePts), branchIdx };
+    if (si < NUM_STAGES - 1) {
+      const stI1EndIdx = si + 1 < NUM_STAGES - 1 ? routeIdxAtKm(stageMainBoundaryKm(si + 1)) : ROUTE_PTS.length - 1;
+      const fwdMinIdx  = Math.min(routeIdxAheadByKm(branchIdx, 0.5), stI1EndIdx);
+      const rejoinIdx  = nearestRoutePt(c.lat, c.lon, fwdMinIdx, stI1EndIdx);
+      const rejoinPt   = ROUTE_PTS[rejoinIdx];
+      const wpReturn   = [[c.lat, c.lon], rejoinPt];
+      const { pts: returnPts }  = await brouterRoute(wpReturn);
+
+      if (stages[si].routingGen !== gen) { stages[si].routeLoading = false; return; } // cancelled while routing return leg
+
+      const returnRoute= [...returnPts, ...ROUTE_PTS.slice(rejoinIdx + 1, stI1EndIdx + 1)];
+      stages[si+1].campFromPrev = { waypoints: wpReturn, brouterPts: returnPts, routePts: returnRoute, km: ptsKm(returnRoute), rejoinIdx };
+    }
+  } catch(e) {
+    if (stages[si].routingGen === gen) {
+      stages[si].error = 'BRouter: ' + e.message;
+      stages[si].campTarget = null;
+      if (si < NUM_STAGES - 1) stages[si+1].campFromPrev = null;
+    }
+  }
+  if (stages[si].routingGen !== gen) return; // cancelled — don't update UI
+  stages[si].routeLoading = false;
+  drawCustomRoutes(); render(); drawMarkers(); await saveTargets();
+}
+
+function renderManualCamps(si) {
+  const camps = manualCamps[si] || [];
+  let html = '';
+  if (camps.length > 0) {
+    html += `<div class="manual-sect campsite-list">`;
+    camps.forEach((c, midx) => {
+      const isTarget = stages[si].campTarget?._manual && stages[si].campTarget._manualIdx === midx;
+      const isLoading = stages[si].routeLoading;
+      const [cls, lbl] = c.dayguests === 'yes' ? ['b-yes','✓ Tagesgäste ok'] : c.dayguests === 'no' ? ['b-no','✗ Keine Tagesg.'] : ['b-unk','? Unklar'];
+      let targetBtn;
+      if (isLoading && isTarget) {
+        targetBtn = `<div class="route-status"><span class="spin"></span> Route wird berechnet…</div>`;
+      } else if (isTarget) {
+        targetBtn = `<button class="target-btn remove" onclick="setManualAsTarget(${si},${midx},event)">✗ Ziel entfernen</button>`;
+      } else {
+        targetBtn = `<button class="target-btn" onclick="setManualAsTarget(${si},${midx},event)">⛳ Als Etappenziel setzen</button>`;
+      }
+      html += `<div class="camp${isTarget?' camp-active':''}">
+        <div class="cn">${c.name}<span class="manual-badge">Manuell</span></div>
+        ${c.note ? `<div class="camp-addr">${c.note}</div>` : ''}
+        <span class="badge ${cls}">${lbl}</span>
+        ${c.website ? `<div class="ws-row"><a class="cw" href="${c.website}" target="_blank" onclick="event.stopPropagation()">${c.website.replace(/^https?:\/\//,'').replace(/\/$/,'')}</a></div>` : ''}
+        ${targetBtn}
+        <button class="del-btn" onclick="deleteManualCamp(${si},${midx},event)">🗑 Löschen</button>
+      </div>`;
+    });
+    html += `</div>`;
+  }
+  if (addingCampFor === si) {
+    html += `<div class="add-camp-form" onclick="event.stopPropagation()">
+      <span class="acf-label">Name *</span>
+      <input id="acf-name-${si}" class="acf-input" type="text" placeholder="z.B. Campingpark Sonnenhügel" onkeydown="if(event.key==='Escape')cancelAddCamp(event)">
+      <span class="acf-label">Koordinaten — Lat / Lon *</span>
+      <div class="acf-row">
+        <input id="acf-lat-${si}" class="acf-input" type="number" step="0.000001" placeholder="51.123456">
+        <input id="acf-lon-${si}" class="acf-input" type="number" step="0.000001" placeholder="8.654321">
+      </div>
+      <button class="add-camp-btn" style="margin-top:4px" onclick="event.stopPropagation();(()=>{const m=leafletMap.getCenter();document.getElementById('acf-lat-${si}').value=m.lat.toFixed(6);document.getElementById('acf-lon-${si}').value=m.lng.toFixed(6)})()">🎯 Kartenmittelpunkt übernehmen</button>
+      <span class="acf-label">Tagesgäste</span>
+      <select id="acf-dg-${si}" class="acf-input" style="margin-top:3px">
+        <option value="unclear">? Unklar</option>
+        <option value="yes">✓ Ja – Tagesgäste erlaubt</option>
+        <option value="no">✗ Nein – keine Tagesgäste</option>
+      </select>
+      <span class="acf-label">Website (optional)</span>
+      <input id="acf-url-${si}" class="acf-input" style="margin-top:3px" type="url" placeholder="https://...">
+      <span class="acf-label">Notiz (optional)</span>
+      <input id="acf-note-${si}" class="acf-input" style="margin-top:3px" type="text" placeholder="Eigene Notiz">
+      <div class="acf-btns">
+        <button class="acf-save" onclick="saveNewCamp(${si},event)">✓ Hinzufügen</button>
+        <button class="acf-cancel" onclick="cancelAddCamp(event)">Abbrechen</button>
+      </div>
+    </div>`;
+  }
+  html += `<button class="add-camp-btn" onclick="startAddCamp(${si},event)">${addingCampFor===si?'✕ Abbrechen':'+ Campingplatz manuell hinzufügen'}</button>`;
+  return html;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// SIDEBAR RENDER
+// ─────────────────────────────────────────────────────────────────────────────
+let activeStage=null;
+let activeCamp=null;   // {si,ci}
+let editingWs=null;    // {si,ci}
+
+let wsData={};
+function wsLoad(){ return wsData; }
+function wsCampKey(si,c){ return `${si}_${c.lat}_${c.lon}`; }
+async function wsInit(){
+  try{ const r=await fetch('/api/websites'); if(r.ok) wsData=await r.json(); }catch{}
+}
+async function wsSave(key,url){
+  url ? wsData[key]=url : delete wsData[key];
+  try{ await fetch('/api/websites',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(wsData)}); }catch{}
+}
+function render(){
+  const c=document.getElementById('stagesEl');
+  c.innerHTML='';
+  stages.forEach((st,i)=>{
+    const isLast=i===NUM_STAGES-1;
+    const km=Math.round(st.km);
+    const routeLocked = !!(st.campTarget || st.campFromPrev);
+    const minKm=Math.max(10,BASE_KM_INT-20), maxKm=BASE_KM_INT+20;
+    const canDec=!isLast && !routeLocked && (BASE_KM_INT+st.adjustKm-1)>=minKm;
+    const canInc=!isLast && !routeLocked && (BASE_KM_INT+st.adjustKm+1)<=maxKm;
+    const warn=km<minKm||km>maxKm;
+    const div=document.createElement('div');
+    div.className='stage-card'+(activeStage===i?' active':'');
+    div.id=`sc${i}`;
+    div.onclick=()=>focusStage(i);
+    const elevStats = stageElevStats(i);
+    const elevWrap = elevStats ? `<div class="elev-wrap">
+      <div class="elev-row"><span class="elev-up">+${elevStats.up} m</span><span class="elev-down">-${elevStats.down} m</span></div>
+      ${elevSVG(elevStats.eles, i)}
+    </div>` : '';
+    let campHtml='';
+    if(st.searching){
+      campHtml=`<div class="spin-wrap"><span class="spin"></span>${st.searchMsg||'KI sucht Campingplätze…'}</div>`;
+    } else if(st.error){
+      campHtml=`<div class="no-camps">⚠ Fehler bei der Suche</div><div class="err-msg">${st.error}</div>`;
+    } else if(st.campsites!==null){
+      if(st.autoAdjMsg) campHtml+=`<div class="auto-adj-msg">🔄 ${st.autoAdjMsg}</div>`;
+      if(st.campsites.length===0){
+        campHtml+=`<div class="no-camps">⚠ Kein Campingplatz gefunden (alle ±10 km probiert)</div>`;
+      } else {
+        const hasAutoTarget = st.campTarget && !st.campTarget._manual;
+        const toggled = expandedCampLists.has(i);
+        if (hasAutoTarget) {
+          // Default: collapsed (only target). toggled = expanded (all)
+          if (!toggled) {
+            const c = st.campsites[st.campTarget.ci];
+            if (c) campHtml += `<div class="campsite-list">${renderCamp(c, i, st.campTarget.ci)}</div>`;
+            const hidden = st.campsites.length - (c ? 1 : 0);
+            if (hidden > 0) campHtml += `<span class="camp-toggle" onclick="event.stopPropagation();toggleCampList(${i})">+ ${hidden} weitere Campingplätze anzeigen</span>`;
+          } else {
+            campHtml += `<div class="campsite-list">${st.campsites.map((c,ci)=>renderCamp(c,i,ci)).join('')}</div>`;
+            campHtml += `<span class="camp-toggle" onclick="event.stopPropagation();toggleCampList(${i})">▲ Andere ausblenden</span>`;
+          }
+        } else {
+          // Default: expanded (all). toggled = collapsed (count only)
+          if (!toggled) {
+            campHtml += `<div class="campsite-list">${st.campsites.map((c,ci)=>renderCamp(c,i,ci)).join('')}</div>`;
+            campHtml += `<span class="camp-toggle" onclick="event.stopPropagation();toggleCampList(${i})">▲ Zuklappen</span>`;
+          } else {
+            campHtml += `<span class="camp-toggle" onclick="event.stopPropagation();toggleCampList(${i})">+ ${st.campsites.length} Campingplätze anzeigen</span>`;
+          }
+        }
+      }
+    }
+    div.innerHTML=`
+      <div class="sh">
+        <span class="sn">ETAPPE ${i+1} · ${STAGE_ENDS[i]?.name || ''}</span>
+        <span class="sk">${Math.round(stageStartKm(i))}–${Math.round(stageEndKm(i))} km</span>
+      </div>
+      <div class="adj">
+        <button class="adj-btn" onclick="event.stopPropagation();adj(${i},-1)" ${!canDec?'disabled':''}>−</button>
+        <span class="adj-km${warn?' km-warn':''}">${km} km</span>
+        <button class="adj-btn" onclick="event.stopPropagation();adj(${i},+1)" ${!canInc?'disabled':''}>+</button>
+        ${isLast?'<span class="adj-rest">Restetappe</span>':routeLocked?'<span class="adj-locked">durch Route festgelegt</span>':''}
+      </div>
+      ${elevWrap}
+      <button class="search-btn" onclick="event.stopPropagation();searchStage(${i})" ${st.searching?'disabled':''}>
+        ${st.searching?'<span class="spin"></span> ':''}${st.campsites!==null&&!st.searching?'🔄 Neu suchen':'🔍 Campingplätze suchen'}
+      </button>
+      ${st.campTarget!=null?`<div class="route-status">⛳ Ziel: ${st.campTarget._manual?manualCamps[i]?.[st.campTarget._manualIdx]?.name||'Campingplatz':st.campsites?.[st.campTarget.ci]?.name||'Campingplatz'} · ${Math.round(st.campTarget.km)} km</div>`:''}
+      ${st.campFromPrev!=null&&i>0?`<div class="route-status" style="color:var(--accent)">↩ Weiterroute: ${Math.round(st.campFromPrev.km)} km</div>`:''}
+      ${campHtml}
+      ${renderManualCamps(i)}
+      <button class="exp-btn" onclick="exportStageGPX(${i},event)">↓ Etappe ${i+1} als GPX</button>
+    `;
+    c.appendChild(div);
+  });
+}
+
+function renderCamp(c, si, ci){
+  const saved=wsLoad()[wsCampKey(si,c)];
+  const site=saved!==undefined?saved:c.website;
+  const [cls,lbl]=c.dayguests==='yes'?['b-yes','✓ Tagesgäste ok']:c.dayguests==='no'?['b-no','✗ Keine Tagesg.']:['b-unk','? Unklar'];
+  const isActive=activeCamp?.si===si&&activeCamp?.ci===ci;
+  const isEditing=editingWs?.si===si&&editingWs?.ci===ci;
+  let wsHtml;
+  if(isEditing){
+    wsHtml=`<div class="ws-edit" onclick="event.stopPropagation()">
+      <input id="wsi_${si}_${ci}" class="ws-input" type="url" value="${site||''}" placeholder="https://..." onkeydown="if(event.key==='Enter')saveWs(${si},${ci});if(event.key==='Escape')cancelWs()">
+      <button class="adj-btn" onclick="saveWs(${si},${ci})" title="Speichern">✓</button>
+      <button class="adj-btn" onclick="cancelWs()" title="Abbrechen">✗</button>
+    </div>`;
+  } else if(site){
+    const short=site.replace(/^https?:\/\//,'').replace(/\/$/,'');
+    wsHtml=`<div class="ws-row">
+      <a class="cw" href="${site}" target="_blank" onclick="event.stopPropagation()" title="${site}">${short}</a>
+      <button class="icon-btn" onclick="event.stopPropagation();navigator.clipboard.writeText('${site}').catch(()=>{})" title="Kopieren">⎘</button>
+      <button class="icon-btn" onclick="event.stopPropagation();editWs(${si},${ci})" title="Bearbeiten">✏</button>
+    </div>`;
+  } else {
+    wsHtml=`<div class="ws-row">
+      <span class="muted-sm">keine Website</span>
+      <button class="icon-btn" onclick="event.stopPropagation();editWs(${si},${ci})" title="URL hinzufügen" style="padding:2px 6px">+URL</button>
+    </div>`;
+  }
+  const isTarget = stages[si].campTarget?.ci === ci;
+  const isLoading = stages[si].routeLoading;
+  let targetHtml;
+  if (isLoading && isActive) {
+    targetHtml = `<div class="route-status"><span class="spin"></span> BRouter berechnet Route…</div>`;
+  } else if (isTarget) {
+    targetHtml = `<button class="target-btn remove" onclick="event.stopPropagation();setAsTarget(${si},${ci})">✗ Ziel entfernen</button>`;
+  } else {
+    targetHtml = `<button class="target-btn" onclick="event.stopPropagation();setAsTarget(${si},${ci})">⛳ Als Etappenziel setzen</button>`;
+  }
+
+  return `<div class="camp${isActive?' camp-active':''}${isTarget?' camp-active':''}" onclick="selectCamp(${si},${ci})">
+    <div class="cn">${c.name}</div>
+    ${c.address?`<div class="camp-addr">📍 ${c.address}</div>`:''}
+    <div class="cd">${c.lat ? liveDistKm(si,c).toFixed(1)+' km vom Etappenende' : ''}</div>
+    <span class="badge ${cls}">${lbl}</span>
+    ${wsHtml}
+    ${targetHtml}
+    ${c.note?`<div class="cn-note">${c.note}</div>`:''}
+  </div>`;
+}
+
+function editWs(si,ci){ editingWs={si,ci}; render(); setTimeout(()=>document.getElementById(`wsi_${si}_${ci}`)?.focus(),50); }
+function cancelWs(){ editingWs=null; render(); }
+async function saveWs(si,ci){
+  const inp=document.getElementById(`wsi_${si}_${ci}`);
+  if(!inp) return;
+  await wsSave(wsCampKey(si,stages[si].campsites[ci]),inp.value.trim());
+  editingWs=null; render();
+}
+function selectCamp(si,ci){
+  const same=activeCamp?.si===si&&activeCamp?.ci===ci;
+  activeCamp=same?null:{si,ci};
+  editingWs=null;
+  render(); drawMarkers();
+  if(!same){
+    const c=stages[si].campsites[ci];
+    leafletMap.flyTo([c.lat,c.lon],14,{duration:0.5});
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// STAGE ADJUST
+// ─────────────────────────────────────────────────────────────────────────────
+function adj(i, delta){
+  if(i===NUM_STAGES-1) return;
+  // Can't adjust while a camp route is active – the km is fixed by the route
+  if(stages[i].campTarget || stages[i].campFromPrev) return;
+  const minKm=Math.max(10,BASE_KM_INT-20), maxKm=BASE_KM_INT+20;
+  const newKm=BASE_KM_INT+stages[i].adjustKm+delta;
+  if(newKm<minKm||newKm>maxKm) return;
+  stages[i].adjustKm+=delta;
+  drawCustomRoutes(); render(); drawMarkers();
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// OVERPASS API
+// ─────────────────────────────────────────────────────────────────────────────
+function hav(la1,lo1,la2,lo2){
+  const R=6371,r=Math.PI/180;
+  const a=Math.sin((la2-la1)*r/2)**2+Math.cos(la1*r)*Math.cos(la2*r)*Math.sin((lo2-lo1)*r/2)**2;
+  return R*2*Math.asin(Math.sqrt(a));
+}
+
+const OVERPASS_ENDPOINTS=[
+  'https://overpass-api.de/api/interpreter',
+  'https://lz4.overpass-api.de/api/interpreter',
+  'https://overpass.kumi.systems/api/interpreter'
+];
+
+async function overpassFetch(q){
+  const param='?data='+encodeURIComponent(q);
+  // 1) Direkte Endpoints
+  for(const ep of OVERPASS_ENDPOINTS){
+    try{
+      const r=await fetch(ep+param,{signal:AbortSignal.timeout(20000)});
+      if(r.ok) return await r.json();
+    }catch{}
+  }
+  // 2) CORS-Proxy Fallback (für file:// oder blockierte Netzwerke)
+  try{
+    const r=await fetch('https://corsproxy.io/?'+encodeURIComponent(OVERPASS_ENDPOINTS[0]+param),{signal:AbortSignal.timeout(20000)});
+    if(r.ok) return await r.json();
+  }catch{}
+  // Hilfreiche Fehlermeldung
+  if(location.protocol==='file:')
+    throw new Error('Datei als file:// geöffnet – bitte über lokalem Server öffnen:\npython -m http.server 3000\n→ http://localhost:3000/radreise_planer.html');
+  throw new Error('Overpass-Server nicht erreichbar. Internetverbindung prüfen.');
+}
+
+async function overpassSearch(lat, lon, radiusM=15000){
+  const q=`[out:json][timeout:25];(node["tourism"="camp_site"](around:${radiusM},${lat},${lon});way["tourism"="camp_site"](around:${radiusM},${lat},${lon});node["tourism"="caravan_site"](around:${radiusM},${lat},${lon});way["tourism"="caravan_site"](around:${radiusM},${lat},${lon}););out center tags;`;
+  const data=await overpassFetch(q);
+
+  return data.elements.map(el=>{
+    const elLat=el.lat??el.center?.lat;
+    const elLon=el.lon??el.center?.lon;
+    if(!elLat||!elLon) return null;
+    const t=el.tags||{};
+    let dayguests='unclear';
+    if(t.group_only==='yes'||t.access==='private'||t.access==='no') dayguests='no';
+    else if(t.access==='yes'||t.access==='public') dayguests='yes';
+    const addr=[t['addr:street'],t['addr:housenumber'],t['addr:postcode'],t['addr:city']]
+      .filter(Boolean).join(' ')||null;
+    return {
+      name: t.name||t['name:de']||'Campingplatz',
+      address: addr,
+      lat: elLat, lon: elLon,
+      website: t.website||t['contact:website']||t['contact:url']||t.url||t['website:official']||null,
+      dayguests,
+      dist_km: hav(lat,lon,elLat,elLon),
+      note: null
+    };
+  }).filter(Boolean).sort((a,b)=>a.dist_km-b.dist_km).slice(0,6);
+}
+
+// Current straight-line distance from the stage-i end point to campsite c.
+// Always computed from the live route position, never from the stale search-time value.
+function liveDistKm(si, c) {
+  if (!c.lat || !c.lon) return c.dist_km;
+  if (ROUTE_PTS.length) {
+    const bKm = stageMainBoundaryKm(si);
+    const idx = Math.min(routeIdxAtKm(bKm), ROUTE_PTS.length - 1);
+    return hav(ROUTE_PTS[idx][0], ROUTE_PTS[idx][1], c.lat, c.lon);
+  }
+  return c.dist_km;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// BROUTER ROUTING
+// ─────────────────────────────────────────────────────────────────────────────
+const BROUTER_PROFILES = [
+  { id: 'trekking',               label: 'Trekking (Standard)' },
+  { id: 'fastbike',               label: 'Fastbike' },
+  { id: 'fastbike-lowtraffic',    label: 'Fastbike (wenig Verkehr)' },
+  { id: 'fastbike-verylowtraffic',label: 'Fastbike (sehr wenig Verkehr)' },
+  { id: 'gravel',                 label: 'Gravel' },
+  { id: 'mtb',                    label: 'MTB' },
+  { id: 'safety',                 label: 'Safety (sicherste Straßen)' },
+  { id: 'shortest',               label: 'Kürzeste Strecke' },
+];
+let currentProfile = 'trekking';
+
+let routeCumDist = [];
+
+function buildCumDist() {
+  if (!ROUTE_PTS.length) return;
+  routeCumDist = new Array(ROUTE_PTS.length);
+  routeCumDist[0] = 0;
+  for (let i = 1; i < ROUTE_PTS.length; i++) {
+    routeCumDist[i] = routeCumDist[i-1] +
+      hav(ROUTE_PTS[i-1][0], ROUTE_PTS[i-1][1], ROUTE_PTS[i][0], ROUTE_PTS[i][1]);
+  }
+}
+
+function routeIdxAtKm(km) {
+  let lo = 0, hi = routeCumDist.length - 1;
+  while (lo < hi) {
+    const mid = (lo + hi + 1) >> 1;
+    if (routeCumDist[mid] <= km) lo = mid; else hi = mid - 1;
+  }
+  return lo;
+}
+
+// Index of the route point at least `minKm` ahead of startIdx
+function routeIdxAheadByKm(startIdx, minKm) {
+  return routeIdxAtKm(routeCumDist[startIdx] + minKm);
+}
+
+function nearestRoutePt(lat, lon, startIdx, endIdx) {
+  let best = startIdx, bestD = Infinity;
+  for (let i = startIdx; i <= endIdx; i++) {
+    const d = hav(lat, lon, ROUTE_PTS[i][0], ROUTE_PTS[i][1]);
+    if (d < bestD) { bestD = d; best = i; }
+  }
+  return best;
+}
+
+function subsamplePts(pts, max = 20) {
+  if (pts.length <= max) return pts;
+  const out = [];
+  const step = (pts.length - 1) / (max - 1);
+  for (let i = 0; i < max; i++) out.push(pts[Math.round(i * step)]);
+  return out;
+}
+
+function ptsKm(pts) {
+  let d = 0;
+  for (let i = 1; i < pts.length; i++)
+    d += hav(pts[i-1][0], pts[i-1][1], pts[i][0], pts[i][1]);
+  return d;
+}
+
+async function brouterRoute(waypoints) {
+  const lonlats = waypoints.map(([lat, lon]) => `${lon},${lat}`).join('|');
+  const url = `/api/brouter?lonlats=${encodeURIComponent(lonlats)}&profile=${currentProfile}&alternativeidx=0&format=geojson`;
+  const r = await fetch(url, { signal: AbortSignal.timeout(30000) });
+  if (!r.ok) {
+    const txt = await r.text().catch(() => '');
+    throw new Error(`BRouter ${r.status}: ${txt.slice(0, 200)}`);
+  }
+  const gj = await r.json();
+  if (gj.error) throw new Error(gj.error);
+  const coords = gj.features[0].geometry.coordinates;
+  const pts  = coords.map(([lon, lat])       => [lat, lon]);
+  const eles = coords.every(c => c.length >= 3 && !isNaN(c[2]))
+    ? coords.map(([, , ele]) => Math.round(ele * 10) / 10)
+    : [];
+  return { pts, eles };
+}
+
+async function setAsTarget(si, ci) {
+  const c = stages[si].campsites[ci];
+
+  // Toggle off if already set
+  if (stages[si].campTarget?.ci === ci) {
+    stages[si].routingGen++;          // invalidate any in-flight routing
+    stages[si].routeLoading = false;  // cancel spinner if routing was in progress
+    stages[si].campTarget = null;
+    if (si < NUM_STAGES - 1) stages[si+1].campFromPrev = null;
+    expandedCampLists.delete(si);
+    drawCustomRoutes(); render(); drawMarkers();
+    await saveTargets();
+    return;
+  }
+
+  // Clear any previously active camp state before starting new routing
+  stages[si].campTarget = null;
+  if (si < NUM_STAGES - 1) stages[si+1].campFromPrev = null;
+  const gen = ++stages[si].routingGen; // capture generation for this routing attempt
+
+  stages[si].routeLoading = true;
+  stages[si].error = null;
+  render();
+
+  try {
+    // Use main-route boundary km for this stage
+    const stStartIdx = si > 0 ? routeIdxAtKm(stageMainBoundaryKm(si - 1)) : 0;
+    const stEndIdx   = si < NUM_STAGES - 1 ? routeIdxAtKm(stageMainBoundaryKm(si)) : ROUTE_PTS.length - 1;
+
+    // Branch point: nearest original-route point to campsite within this stage
+    const branchIdx = nearestRoutePt(c.lat, c.lon, stStartIdx, stEndIdx);
+    const branchPt  = ROUTE_PTS[branchIdx];
+
+    // Shortest path: branch point → campsite  (2 waypoints only)
+    const wpTocamp = [branchPt, [c.lat, c.lon]];
+    const { pts: detourPts } = await brouterRoute(wpTocamp);
+
+    if (stages[si].routingGen !== gen) { stages[si].routeLoading = false; return; } // cancelled while routing
+
+    // Stage i: original route up to branch point + detour to camp
+    const stageIPts = [...ROUTE_PTS.slice(stStartIdx, branchIdx + 1), ...detourPts.slice(1)];
+    stages[si].campTarget = { ci, waypoints: wpTocamp, brouterPts: detourPts, routePts: stageIPts, km: ptsKm(stageIPts), branchIdx };
+
+    // Stage i+1: rejoin original route AHEAD (never behind) of the branch point
+    if (si < NUM_STAGES - 1) {
+      const stI1EndIdx = si + 1 < NUM_STAGES - 1 ? routeIdxAtKm(stageMainBoundaryKm(si + 1)) : ROUTE_PTS.length - 1;
+      // Rejoin: nearest forward point at least 0.5 km ahead of branch
+      const fwdMinIdx  = Math.min(routeIdxAheadByKm(branchIdx, 0.5), stI1EndIdx);
+      const rejoinIdx  = nearestRoutePt(c.lat, c.lon, fwdMinIdx, stI1EndIdx);
+      const rejoinPt   = ROUTE_PTS[rejoinIdx];
+
+      // Shortest path: campsite → rejoin point  (2 waypoints only)
+      const wpReturn = [[c.lat, c.lon], rejoinPt];
+      const { pts: returnPts } = await brouterRoute(wpReturn);
+
+      if (stages[si].routingGen !== gen) { stages[si].routeLoading = false; return; } // cancelled while routing return leg
+
+      // Stage i+1: BRouter return + rest of original route to stage end
+      const stageI1Pts = [...returnPts, ...ROUTE_PTS.slice(rejoinIdx + 1, stI1EndIdx + 1)];
+      stages[si+1].campFromPrev = { waypoints: wpReturn, brouterPts: returnPts, routePts: stageI1Pts, km: ptsKm(stageI1Pts), rejoinIdx };
+    }
+  } catch(e) {
+    if (stages[si].routingGen === gen) { // only update error if not already cancelled
+      stages[si].error = 'BRouter: ' + e.message;
+      stages[si].campTarget = null;
+      if (si < NUM_STAGES - 1) stages[si+1].campFromPrev = null;
+    }
+  }
+
+  if (stages[si].routingGen !== gen) return; // cancelled — don't update UI
+  stages[si].routeLoading = false;
+  drawCustomRoutes(); render(); drawMarkers();
+  await saveTargets();
+  leafletMap.flyTo([c.lat, c.lon], 12, { duration: 0.6 });
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// SEARCH WITH RADIUS EXPANSION
+// ─────────────────────────────────────────────────────────────────────────────
+async function searchStage(i){
+  const st=stages[i];
+  // Use the actual adjusted marker position (same as drawMarkers), not stale STAGE_ENDS
+  let searchLat, searchLon;
+  if (ROUTE_PTS.length) {
+    const bKm = stageMainBoundaryKm(i);
+    const idx = Math.min(routeIdxAtKm(bKm), ROUTE_PTS.length - 1);
+    [searchLat, searchLon] = ROUTE_PTS[idx];
+  } else {
+    const ep = STAGE_ENDS[i];
+    if (!ep) { st.error='Kein Etappenendpunkt definiert'; render(); return; }
+    searchLat = ep.lat; searchLon = ep.lon;
+  }
+  if (searchLat == null) { st.error='Kein Etappenendpunkt definiert'; render(); return; }
+  st.searching=true; st.campsites=null; st.error=null; st.autoAdjMsg=null;
+  expandedCampLists.delete(i);
+  render();
+
+  try {
+    let found=null;
+    for(const r of [15000,20000,25000]){
+      st.searchMsg=r===15000?'Suche Campingplätze (OSM)…':`Erweitere Radius auf ${r/1000} km…`;
+      render();
+      const camps=await overpassSearch(searchLat, searchLon, r);
+      if(camps.length>0){ found=camps; break; }
+    }
+    st.campsites=found||[];
+    if(found&&found[0].dist_km>15)
+      st.autoAdjMsg=`Nächster Platz ${found[0].dist_km.toFixed(1)} km entfernt (Radius erweitert)`;
+    st.searching=false; st.searchMsg=null;
+  } catch(e){
+    st.searching=false; st.searchMsg=null;
+    st.error=e.message;
+  }
+  render(); drawMarkers();
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// SEARCH ALL
+// ─────────────────────────────────────────────────────────────────────────────
+async function searchAll(){
+  const btn=document.getElementById('searchAllBtn');
+  btn.disabled=true;
+  for(let i=0;i<NUM_STAGES;i++){
+    btn.textContent=`⏳ Etappe ${i+1}/${NUM_STAGES}…`;
+    await searchStage(i);
+    document.getElementById('pbar').style.width=((i+1)/NUM_STAGES*100)+'%';
+  }
+  btn.disabled=false;
+  btn.textContent='✓ Fertig';
+}
+
+function toggleCampList(i) {
+  expandedCampLists.has(i) ? expandedCampLists.delete(i) : expandedCampLists.add(i);
+  render();
+}
+
+function focusStage(i){
+  activeStage=i;
+  render();
+  const ep=STAGE_ENDS[i];
+  if(ep) focusOnPoint(ep.lat,ep.lon);
+  document.getElementById(`sc${i}`)?.scrollIntoView({behavior:'smooth',block:'nearest'});
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// INIT
+// ─────────────────────────────────────────────────────────────────────────────
+async function loadRoute(){
+  // 1. Try custom route from server (user-saved GPX or planned route)
+  try {
+    const r = await fetch('/api/route-data');
+    if (r.ok) {
+      const data = await r.json();
+      if (data.route_sampled?.length) {
+        ROUTE_PTS = data.route_sampled;
+        ROUTE_ELEVATIONS = data.route_elevations || [];
+        ROUTE_NAME = data.route_name || 'Meine Tour';
+        NUM_STAGES = data.num_stages || 10;
+        buildCumDist();
+        TOTAL_KM = data.total_km || routeCumDist[routeCumDist.length - 1] || 0;
+        BASE_KM_INT = Math.round(TOTAL_KM / NUM_STAGES);
+        rebuildStages();
+        computeStageEnds(data.stage_names || null);
+        updateHeaderStats();
+        return;
+      }
+    }
+  } catch {}
+  // No saved route found → prompt user to create one
+  console.warn('No route data found — showing new-tour modal');
+  setTimeout(() => showTourModal(), 600);
+}
+// Profil-Dropdown befüllen
+const profileSel = document.getElementById('profileSel');
+BROUTER_PROFILES.forEach(p => {
+  const o = document.createElement('option');
+  o.value = p.id; o.textContent = p.label;
+  if (p.id === currentProfile) o.selected = true;
+  profileSel.appendChild(o);
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// ELEVATION PROFILE
+// ─────────────────────────────────────────────────────────────────────────────
+function stageElevStats(i) {
+  if (!ROUTE_ELEVATIONS.length) return null;
+  const stStartIdx = i > 0 ? routeIdxAtKm(stageMainBoundaryKm(i - 1)) : 0;
+  const stEndIdx   = i < NUM_STAGES - 1 ? routeIdxAtKm(stageMainBoundaryKm(i)) : ROUTE_ELEVATIONS.length - 1;
+  const eles = ROUTE_ELEVATIONS.slice(stStartIdx, stEndIdx + 1);
+  let up = 0, down = 0;
+  for (let j = 1; j < eles.length; j++) {
+    const d = eles[j] - eles[j-1];
+    if (d > 0) up += d; else down -= d;
+  }
+  return { up: Math.round(up), down: Math.round(down), eles };
+}
+
+function elevSVG(eles, sid, w=252, h=34) {
+  if (!eles || eles.length < 2) return '';
+  const step = Math.max(1, Math.floor(eles.length / 80));
+  const pts = [];
+  for (let k = 0; k < eles.length; k += step) pts.push(eles[k]);
+  if (pts[pts.length-1] !== eles[eles.length-1]) pts.push(eles[eles.length-1]);
+  const min = Math.min(...pts), max = Math.max(...pts);
+  const range = max - min || 1;
+  const n = pts.length;
+  const coords = pts.map((e, k) => [
+    ((k / (n-1)) * w).toFixed(1),
+    ((h-3) - ((e-min)/range)*(h-7) + 1).toFixed(1)
+  ]);
+  const polyPts = coords.map(([x,y]) => `${x},${y}`).join(' ');
+  const areaPath = `M 0,${h} L ${coords[0].join(',')} ` +
+    coords.slice(1).map(([x,y]) => `L ${x},${y}`).join(' ') +
+    ` L ${w},${h} Z`;
+  const gid = `eg${sid}`;
+  return `<svg width="${w}" height="${h}" style="display:block" xmlns="http://www.w3.org/2000/svg">
+    <defs><linearGradient id="${gid}" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#3d8eff" stop-opacity="0.3"/>
+      <stop offset="100%" stop-color="#3d8eff" stop-opacity="0.03"/>
+    </linearGradient></defs>
+    <path d="${areaPath}" fill="url(#${gid})" stroke="none"/>
+    <polyline points="${polyPts}" fill="none" stroke="#3d8eff" stroke-width="1.5" stroke-linejoin="round" stroke-linecap="round"/>
+  </svg>`;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// GPX EXPORT
+// ─────────────────────────────────────────────────────────────────────────────
+function stageRoutePts(i) {
+  if (!ROUTE_PTS.length) return [];
+  const stStartIdx = i > 0 ? routeIdxAtKm(stageMainBoundaryKm(i - 1)) : 0;
+  const stEndIdx   = i < NUM_STAGES - 1 ? routeIdxAtKm(stageMainBoundaryKm(i)) : ROUTE_PTS.length - 1;
+  const st = stages[i];
+  const hasCT = st.campTarget != null;
+  const hasFP = st.campFromPrev != null;
+
+  if (hasFP && hasCT) {
+    // Camp(prev) → BRouter-Return → Rejoin → Hauptroute → Branch → BRouter-Detour → Camp(curr)
+    const fp = st.campFromPrev;
+    const ct = st.campTarget;
+    const returnLen  = Math.max(1, fp.routePts.length - (stEndIdx - fp.rejoinIdx));
+    const tocampOff  = ct.branchIdx - stStartIdx + 1;
+    return [
+      ...fp.routePts.slice(0, returnLen),
+      ...ROUTE_PTS.slice(fp.rejoinIdx + 1, ct.branchIdx + 1),
+      ...ct.routePts.slice(tocampOff)
+    ];
+  } else if (hasFP) {
+    return st.campFromPrev.routePts;
+  } else if (hasCT) {
+    return st.campTarget.routePts;
+  } else {
+    return ROUTE_PTS.slice(stStartIdx, stEndIdx + 1);
+  }
+}
+
+function makeGPX(idxList) {
+  const esc = s => String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+  let xml = '<?xml version="1.0" encoding="UTF-8"?>\n';
+  xml += '<gpx version="1.1" creator="Radreise Planer" xmlns="http://www.topografix.com/GPX/1/1">\n';
+  xml += `<metadata><name>${esc(ROUTE_NAME)}</name></metadata>\n`;
+
+  // Waypoint Start
+  if (idxList[0] === 0 && ROUTE_PTS.length) {
+    const [sLat, sLon] = ROUTE_PTS[0];
+    const sName = ROUTE_NAME.split('→')[0]?.trim() || 'Start';
+    xml += `<wpt lat="${sLat.toFixed(6)}" lon="${sLon.toFixed(6)}"><name>${esc('Start: ' + sName)}</name></wpt>\n`;
+  }
+
+  // Waypoints je Etappe (Camp wenn gesetzt, sonst Etappenende)
+  for (const i of idxList) {
+    const st = stages[i];
+    if (st.campTarget != null) {
+      const c = st.campsites?.[st.campTarget.ci];
+      if (c?.lat && c?.lon) {
+        xml += `<wpt lat="${c.lat.toFixed(6)}" lon="${c.lon.toFixed(6)}">`;
+        xml += `<name>${esc('E' + (i+1) + ': ' + c.name)}</name>`;
+        if (c.address) xml += `<desc>${esc(c.address)}</desc>`;
+        xml += '</wpt>\n';
+      }
+    } else {
+      const ep = STAGE_ENDS[i];
+      if (ep) {
+        xml += `<wpt lat="${ep.lat.toFixed(6)}" lon="${ep.lon.toFixed(6)}">`;
+        xml += `<name>${esc('E' + (i+1) + ': ' + ep.name)}</name>`;
+        xml += '</wpt>\n';
+      }
+    }
+  }
+
+  // Tracks
+  for (const i of idxList) {
+    const pts = stageRoutePts(i);
+    xml += `<trk><name>${esc('Etappe ' + (i+1) + (STAGE_ENDS[i] ? ' · ' + STAGE_ENDS[i].name : '') + ' · ' + Math.round(stages[i].km) + ' km')}</name><trkseg>\n`;
+    for (const [lat, lon] of pts)
+      xml += `<trkpt lat="${lat.toFixed(6)}" lon="${lon.toFixed(6)}"/>\n`;
+    xml += '</trkseg></trk>\n';
+  }
+  xml += '</gpx>';
+  return xml;
+}
+
+function downloadGPX(filename, content) {
+  const blob = new Blob([content], { type: 'application/gpx+xml' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url; a.download = filename;
+  document.body.appendChild(a); a.click();
+  document.body.removeChild(a); URL.revokeObjectURL(url);
+}
+
+function exportAllGPX() {
+  const indices = Array.from({length: NUM_STAGES}, (_, i) => i);
+  const slug = ROUTE_NAME.toLowerCase()
+    .replace(/[äöüß]/g, c=>({ä:'ae',ö:'oe',ü:'ue',ß:'ss'}[c]||c))
+    .replace(/[→\s]+/g,'_').replace(/[^a-z0-9_]+/g,'').replace(/^_|_$/g,'');
+  downloadGPX(`radreise_${slug || 'tour'}.gpx`, makeGPX(indices));
+}
+
+function exportStageGPX(i, ev) {
+  if (ev) ev.stopPropagation();
+  const name = STAGE_ENDS[i]?.name || `Etappe_${i+1}`;
+  const slug = name.toLowerCase()
+    .replace(/[äöüß]/g, c => ({ä:'ae',ö:'oe',ü:'ue',ß:'ss'}[c]||c))
+    .replace(/[^a-z0-9]+/g,'_').replace(/^_|_$/g,'');
+  downloadGPX(`etappe_${String(i+1).padStart(2,'0')}_${slug}.gpx`, makeGPX([i]));
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// GPX IMPORT
+// ─────────────────────────────────────────────────────────────────────────────
+function parseGPX(xmlText) {
+  const doc = new DOMParser().parseFromString(xmlText, 'text/xml');
+  const NS = 'http://www.topografix.com/GPX/1/1';
+  let elems = [...doc.getElementsByTagNameNS(NS, 'trkpt')];
+  if (!elems.length) elems = [...doc.getElementsByTagNameNS(NS, 'rtept')];
+  if (!elems.length) elems = [...doc.getElementsByTagName('trkpt')];
+  if (!elems.length) elems = [...doc.getElementsByTagName('rtept')];
+  if (!elems.length) throw new Error('Keine Trackpunkte gefunden');
+
+  const raw = elems.map(e => {
+    const lat = parseFloat(e.getAttribute('lat'));
+    const lon = parseFloat(e.getAttribute('lon'));
+    const eleEl = e.querySelector('ele') ||
+                  e.getElementsByTagNameNS(NS, 'ele')[0] ||
+                  e.getElementsByTagName('ele')[0];
+    const ele = eleEl ? parseFloat(eleEl.textContent) : NaN;
+    return { lat, lon, ele };
+  }).filter(p => !isNaN(p.lat) && !isNaN(p.lon));
+
+  if (!raw.length) throw new Error('Ungültige Koordinaten');
+
+  const pts  = raw.map(p => [p.lat, p.lon]);
+  // Only provide elevations if ALL points have valid ele values
+  const hasEle = raw.every(p => !isNaN(p.ele));
+  const eles = hasEle ? raw.map(p => Math.round(p.ele * 10) / 10) : [];
+
+  const nameEl = doc.getElementsByTagNameNS(NS, 'name')[0] || doc.getElementsByTagName('name')[0];
+  const name = nameEl?.textContent?.trim() || 'Neue Tour';
+  return { pts, eles, name };
+}
+
+let _pendingGpxPts  = null;
+let _pendingGpxEles = [];
+let _pendingGpxKm   = 0;
+
+function loadGPXFile(file) {
+  if (!file) return;
+  const reader = new FileReader();
+  reader.onload = e => {
+    try {
+      const { pts, eles, name } = parseGPX(e.target.result);
+      _pendingGpxPts  = pts;
+      _pendingGpxEles = eles;
+      _pendingGpxKm   = ptsKm(pts);
+      const elevInfo  = eles.length ? ' · Höhenprofil ✓' : '';
+      document.getElementById('gpxStatus').textContent =
+        `✓ ${pts.length.toLocaleString()} Punkte · ${_pendingGpxKm.toFixed(1)} km · ${name}${elevInfo}`;
+      document.getElementById('gpxStatus').style.color = 'var(--green)';
+      document.getElementById('gpxPreviewName').value = name;
+      document.getElementById('gpxStartBtn').disabled = false;
+    } catch(err) {
+      document.getElementById('gpxStatus').textContent = '✗ ' + err.message;
+      document.getElementById('gpxStatus').style.color = 'var(--red)';
+      document.getElementById('gpxStartBtn').disabled = true;
+    }
+  };
+  reader.readAsText(file);
+}
+
+async function startGPXTour() {
+  if (!_pendingGpxPts) return;
+  const name = document.getElementById('gpxPreviewName').value.trim() || 'Neue Tour';
+  const smartStages = Math.max(1, Math.round(_pendingGpxKm / 100));
+  hideTourModal();
+  await setupNewRoute(_pendingGpxPts, name, smartStages, _pendingGpxEles);
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// RAMER-DOUGLAS-PEUCKER SIMPLIFICATION (iterative, no stack-overflow risk)
+// Returns the indices of points to keep from pts[].
+// epsilon is in the same unit as distPtSeg() → km.
+// ─────────────────────────────────────────────────────────────────────────────
+function rdpIndices(pts, epsilon) {
+  const n = pts.length;
+  if (n <= 2) return pts.length === 2 ? [0, 1] : n === 1 ? [0] : [];
+  const keep = new Uint8Array(n);
+  keep[0] = keep[n - 1] = 1;
+  const stack = [[0, n - 1]];
+  while (stack.length) {
+    const [lo, hi] = stack.pop();
+    if (hi - lo <= 1) continue;
+    let maxD = 0, maxI = lo;
+    for (let i = lo + 1; i < hi; i++) {
+      const d = distPtSeg(pts[i][0], pts[i][1], pts[lo][0], pts[lo][1], pts[hi][0], pts[hi][1]);
+      if (d > maxD) { maxD = d; maxI = i; }
+    }
+    if (maxD > epsilon) {
+      keep[maxI] = 1;
+      stack.push([lo, maxI], [maxI, hi]);
+    }
+  }
+  const idx = [];
+  for (let i = 0; i < n; i++) if (keep[i]) idx.push(i);
+  return idx;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// NEW ROUTE SETUP
+// ─────────────────────────────────────────────────────────────────────────────
+async function setupNewRoute(rawPts, name, numStages, rawEles = []) {
+  // Simplify with Douglas-Peucker so curves and corners are preserved.
+  // epsilon = 3 m keeps all road geometry visible at any zoom level.
+  // MAX = 15 000 — modern Leaflet handles this fine; it's only applied as a
+  // backstop for extremely dense 1 Hz GPS recordings.
+  const MAX = 15000;
+  const EPSILON = 0.003; // km ≈ 3 m
+  let sampled = rawPts;
+  let sampledEles = rawEles;
+  if (rawPts.length > MAX) {
+    const keptIdx = rdpIndices(rawPts, EPSILON);
+    sampled     = keptIdx.map(i => rawPts[i]);
+    sampledEles = rawEles.length ? keptIdx.map(i => rawEles[i] ?? 0) : [];
+
+    // Backstop: if RDP still leaves too many points, uniform sub-sample
+    if (sampled.length > MAX) {
+      const step = (sampled.length - 1) / (MAX - 1);
+      const bsPts = [], bsEles = [];
+      for (let k = 0; k < MAX; k++) {
+        const i = Math.round(k * step);
+        bsPts.push(sampled[i]);
+        if (sampledEles.length) bsEles.push(sampledEles[i]);
+      }
+      sampled = bsPts; sampledEles = bsEles;
+    }
+  }
+
+  // ── Step 2: detect & repair GPS "jump" segments via BRouter ──────────────
+  // A jump is a consecutive-point gap that is >> the typical spacing of this
+  // route (caused by GPS signal loss or straight-line route-planner artefacts).
+  {
+    const gaps = [];
+    for (let i = 1; i < sampled.length; i++)
+      gaps.push(hav(sampled[i-1][0], sampled[i-1][1], sampled[i][0], sampled[i][1]));
+
+    const sorted = [...gaps].sort((a, b) => a - b);
+    const p75   = sorted[Math.floor(sorted.length * 0.75)] || 0.1;
+    // Threshold: 10× the 75th-percentile gap, minimum 500 m
+    const threshold = Math.max(p75 * 10, 0.5);
+
+    const jumpIdxs = gaps.reduce((acc, g, i) => (g > threshold ? [...acc, i + 1] : acc), []);
+
+    if (jumpIdxs.length > 0) {
+      // Show a brief toast so the user sees the repair in progress
+      let toast = document.getElementById('_gpxRepairToast');
+      if (!toast) {
+        toast = document.createElement('div');
+        toast.id = '_gpxRepairToast';
+        toast.style.cssText = 'position:fixed;bottom:80px;left:50%;transform:translateX(-50%);' +
+          'background:var(--bg1,#1e1e2e);border:1px solid var(--accent,#3d8eff);' +
+          'border-radius:8px;padding:8px 16px;font-size:12px;color:var(--accent,#3d8eff);' +
+          'z-index:9999;box-shadow:0 4px 12px rgba(0,0,0,.4);white-space:nowrap';
+        document.body.appendChild(toast);
+      }
+      toast.textContent = `⏳ Korrigiere ${jumpIdxs.length} GPS-Lücke${jumpIdxs.length > 1 ? 'n' : ''} via BRouter…`;
+
+      const repairedPts = [], repairedEles = [];
+      let prev = 0;
+      for (const ji of jumpIdxs) {
+        for (let i = prev; i < ji; i++) {
+          repairedPts.push(sampled[i]);
+          if (sampledEles.length) repairedEles.push(sampledEles[i] ?? 0);
+        }
+        try {
+          const { pts: rPts, eles: rEles } = await brouterRoute([sampled[ji - 1], sampled[ji]]);
+          for (let k = 1; k < rPts.length; k++) {
+            repairedPts.push(rPts[k]);
+            if (sampledEles.length)
+              repairedEles.push(rEles.length > k ? rEles[k] : (sampledEles[ji] ?? 0));
+          }
+        } catch {
+          // BRouter unavailable — keep original point as fallback
+          repairedPts.push(sampled[ji]);
+          if (sampledEles.length) repairedEles.push(sampledEles[ji] ?? 0);
+        }
+        prev = ji + 1;
+      }
+      for (let i = prev; i < sampled.length; i++) {
+        repairedPts.push(sampled[i]);
+        if (sampledEles.length) repairedEles.push(sampledEles[i] ?? 0);
+      }
+      sampled     = repairedPts;
+      sampledEles = sampledEles.length ? repairedEles : [];
+
+      toast.textContent = `✓ ${jumpIdxs.length} GPS-Lücke${jumpIdxs.length > 1 ? 'n' : ''} korrigiert`;
+      setTimeout(() => toast.remove(), 3000);
+    }
+  }
+
+  ROUTE_PTS = sampled;
+  ROUTE_ELEVATIONS = sampledEles;
+  ROUTE_NAME = name;
+  NUM_STAGES = Math.max(1, numStages);
+
+  buildCumDist();
+  TOTAL_KM = routeCumDist.length ? routeCumDist[routeCumDist.length - 1] : 0;
+  BASE_KM_INT = Math.round(TOTAL_KM / NUM_STAGES) || 1;
+
+  // Reset all stage/camp state
+  currentTourId   = null;   // new route = new tour
+  currentTourName = null;
+  rebuildStages();
+  manualCamps = {};
+  expandedCampLists.clear();
+  activeStage = null; activeCamp = null; editingWs = null;
+  editMode = false;
+  document.getElementById('editModeBtn')?.classList.remove('active');
+  document.getElementById('legendDrag').style.display = 'none';
+  _exitRouteEditMode();  // Route-Edit-Zustand zurücksetzen
+
+  computeStageEnds();
+  updateHeaderStats();
+
+  // Persist to server
+  await saveRouteData();
+  // Clear old targets and manual camps
+  try { await fetch('/api/targets',     {method:'POST',headers:{'Content-Type':'application/json'},body:'{}'}); } catch {}
+  try { await fetch('/api/manual-camps',{method:'POST',headers:{'Content-Type':'application/json'},body:'{}'}); } catch {}
+
+  // Redraw everything
+  buildMainRouteLayer();
+  if (ROUTE_PTS.length) leafletMap.fitBounds(L.polyline(ROUTE_PTS).getBounds(), {padding:[40,40]});
+  drawCustomRoutes(); render(); drawMarkers();
+}
+
+async function saveRouteData() {
+  try {
+    await fetch('/api/route-data', {
+      method: 'POST',
+      headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({
+        route_name: ROUTE_NAME,
+        route_sampled: ROUTE_PTS,
+        route_elevations: ROUTE_ELEVATIONS,
+        total_km: TOTAL_KM,
+        num_stages: NUM_STAGES,
+        stage_names: STAGE_ENDS.map(ep => ep.name)
+      })
+    });
+  } catch {}
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// TOUR MODAL
+// ─────────────────────────────────────────────────────────────────────────────
+let _activeTab = 'gpx';
+
+function showTourModal() {
+  _pendingGpxPts = null;
+  _pendingGpxKm  = 0;
+  document.getElementById('gpxStatus').textContent = '';
+  document.getElementById('gpxPreviewName').value = '';
+  document.getElementById('gpxStartBtn').disabled = true;
+  document.getElementById('gpxFileInput').value = '';
+  switchTourTab(_activeTab);
+  document.getElementById('tourModal').classList.add('open');
+}
+
+function hideTourModal() {
+  document.getElementById('tourModal').classList.remove('open');
+}
+
+function switchTourTab(tab) {
+  _activeTab = tab;
+  document.getElementById('tabGPXContent').style.display    = tab === 'gpx'    ? '' : 'none';
+  document.getElementById('tabManualContent').style.display = tab === 'manual' ? '' : 'none';
+  document.getElementById('tabGPX').classList.toggle('active',    tab === 'gpx');
+  document.getElementById('tabManual').classList.toggle('active', tab === 'manual');
+  document.getElementById('gpxStartBtn').style.display  = tab === 'gpx'    ? '' : 'none';
+  document.getElementById('planStartBtn').style.display = tab === 'manual' ? '' : 'none';
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// PLAN MODE (Manuell Routen)
+// ─────────────────────────────────────────────────────────────────────────────
+let planMode         = false;
+let planWaypoints    = [];  // [[lat,lon], ...]
+let planSegments     = [];  // BRouter point arrays per segment
+let planSegmentEles  = [];  // elevation arrays per segment (parallel to planSegments)
+let planRoutePts     = [];  // combined route [[lat,lon],...]
+let planRouteEles    = [];  // combined elevations (same length as planRoutePts)
+let planPolyline     = null;
+let planMarkers      = [];
+let planRouting      = false;
+
+function startPlanMode() {
+  const tourName = document.getElementById('planRouteName').value.trim() || 'Meine Tour';
+  hideTourModal();
+  planMode         = true;
+  planWaypoints    = [];
+  planSegments     = [];
+  planSegmentEles  = [];
+  planRoutePts     = [];
+  planRouteEles    = [];
+  planRouting      = false;
+  planMarkers.forEach(m => leafletMap.removeLayer(m)); planMarkers = [];
+  if (planPolyline) { leafletMap.removeLayer(planPolyline); planPolyline = null; }
+
+  document.getElementById('planRouteNameOverlay').value = tourName;
+  document.getElementById('planOverlay').classList.add('open');
+  leafletMap.on('click', planModeClick);
+  updatePlanOverlay();
+}
+
+function stopPlanMode() {
+  if (!planMode) return;
+  planMode = false;
+  leafletMap.off('click', planModeClick);
+  document.getElementById('planOverlay').classList.remove('open');
+  planMarkers.forEach(m => leafletMap.removeLayer(m)); planMarkers = [];
+  if (planPolyline) { leafletMap.removeLayer(planPolyline); planPolyline = null; }
+}
+
+async function planModeClick(e) {
+  if (planRouting) return;
+  const { lat, lng: lon } = e.latlng;
+  planWaypoints.push([lat, lon]);
+
+  // Add numbered marker
+  const n = planWaypoints.length;
+  const col = n === 1 ? '#28c76a' : '#3d8eff';
+  const m = L.marker([lat, lon], {
+    icon: L.divIcon({
+      className: '',
+      html: `<div style="width:18px;height:18px;background:${col};border:2.5px solid #fff;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:8px;font-weight:700;color:#fff;font-family:'DM Mono',monospace">${n}</div>`,
+      iconSize:[18,18], iconAnchor:[9,9]
+    })
+  }).addTo(leafletMap);
+  planMarkers.push(m);
+  updatePlanOverlay();
+
+  if (planWaypoints.length >= 2) {
+    planRouting = true;
+    updatePlanOverlay();
+    const from = planWaypoints[planWaypoints.length - 2];
+    const to   = planWaypoints[planWaypoints.length - 1];
+    try {
+      const { pts: seg, eles: segEles } = await brouterRoute([from, to]);
+      planSegments.push(seg);
+      planSegmentEles.push(segEles);
+    } catch {
+      // Straight-line fallback (no elevation data)
+      planSegments.push([from, to]);
+      planSegmentEles.push([]);
+    }
+    planRouting = false;
+    rebuildPlanRoutePts();
+    updatePlanOverlay();
+  }
+}
+
+function rebuildPlanRoutePts() {
+  planRoutePts  = [];
+  planRouteEles = [];
+  const allHaveEle = planSegmentEles.length === planSegments.length &&
+                     planSegmentEles.every(e => e.length > 0);
+  for (let i = 0; i < planSegments.length; i++) {
+    const seg  = planSegments[i];
+    const eles = planSegmentEles[i] || [];
+    if (planRoutePts.length) {
+      planRoutePts  = [...planRoutePts,  ...seg.slice(1)];
+      if (allHaveEle) planRouteEles = [...planRouteEles, ...eles.slice(1)];
+    } else {
+      planRoutePts  = [...seg];
+      if (allHaveEle) planRouteEles = [...eles];
+    }
+  }
+  if (!allHaveEle) planRouteEles = [];
+  if (planPolyline) leafletMap.removeLayer(planPolyline);
+  planPolyline = planRoutePts.length >= 2
+    ? L.polyline(planRoutePts, {color:'#3d8eff',weight:3,opacity:0.85}).addTo(leafletMap)
+    : null;
+}
+
+function undoLastPlanWaypoint() {
+  if (planWaypoints.length === 0) return;
+  planWaypoints.pop();
+  if (planMarkers.length) leafletMap.removeLayer(planMarkers.pop());
+  if (planSegments.length) planSegments.pop();
+  if (planSegmentEles.length) planSegmentEles.pop();
+  rebuildPlanRoutePts();
+  updatePlanOverlay();
+}
+
+function updatePlanOverlay() {
+  const n = planWaypoints.length;
+  const km = planRoutePts.length >= 2 ? ptsKm(planRoutePts).toFixed(1) : '?';
+  let status;
+  if (planRouting)      status = '⏳ Route wird berechnet…';
+  else if (n === 0)     status = 'Klicke auf die Karte um den Startpunkt zu setzen';
+  else if (n === 1)     status = 'Klicke um weitere Wegpunkte hinzuzufügen';
+  else                  status = `${n} Wegpunkte · ${km} km`;
+  document.getElementById('planStatus').textContent = status;
+  document.getElementById('planFinishBtn').disabled = n < 2 || planRoutePts.length < 2 || planRouting;
+  document.getElementById('planUndoBtn').disabled   = n === 0 || planRouting;
+}
+
+async function finishPlanRoute() {
+  if (planRoutePts.length < 2) return;
+  const name = document.getElementById('planRouteNameOverlay').value.trim() || 'Meine Tour';
+  const pts  = [...planRoutePts];
+  const eles = [...planRouteEles];
+  const km   = ptsKm(pts);
+  const smartStages = Math.max(1, Math.round(km / 100));
+  stopPlanMode();
+  await setupNewRoute(pts, name, smartStages, eles);
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// TOUR MANAGER — Speichern, Laden, Löschen
+// ─────────────────────────────────────────────────────────────────────────────
+
+/** Vollständigen App-Zustand als Objekt erfassen */
+function captureTourState(name) {
+  // Camp-Targets (identisch zu saveTargets, aber als Objekt zurückgeben)
+  const targets = {};
+  stages.forEach((st, si) => {
+    if (!st.campTarget) return;
+    const isManual = !!st.campTarget._manual;
+    const camp = isManual
+      ? manualCamps[si]?.[st.campTarget._manualIdx]
+      : st.campsites?.[st.campTarget.ci];
+    targets[si] = {
+      campsite: camp ? {name:camp.name, lat:camp.lat, lon:camp.lon, address:camp.address||'',
+        dayguests:camp.dayguests, website:camp.website||null, dist_km:camp.dist_km||null} : null,
+      isManual,
+      manualIdx: st.campTarget._manualIdx ?? null,
+      tocamp: { ci:st.campTarget.ci, waypoints:st.campTarget.waypoints, routePts:st.campTarget.routePts,
+                km:st.campTarget.km, branchIdx:st.campTarget.branchIdx },
+      fromPrev: si < NUM_STAGES - 1 && stages[si+1].campFromPrev
+        ? { waypoints:stages[si+1].campFromPrev.waypoints,
+            routePts:stages[si+1].campFromPrev.routePts,
+            km:stages[si+1].campFromPrev.km,
+            rejoinIdx:stages[si+1].campFromPrev.rejoinIdx }
+        : null
+    };
+  });
+  // Suchergebnisse pro Etappe
+  const campsites = {};
+  stages.forEach((st, si) => { if (st.campsites?.length) campsites[si] = st.campsites; });
+
+  return {
+    name,
+    route_name:       ROUTE_NAME,
+    route_sampled:    ROUTE_PTS,
+    route_elevations: ROUTE_ELEVATIONS,
+    total_km:         TOTAL_KM,
+    num_stages:       NUM_STAGES,
+    stage_names:      STAGE_ENDS.map(ep => ep.name),
+    stage_adjustments:stages.map(s => s.adjustKm),
+    targets,
+    campsites,
+    manual_camps:     manualCamps,
+    websites:         wsData
+  };
+}
+
+/** Tour-Manager-Modal öffnen */
+async function showTourManager() {
+  document.getElementById('saveTourNameInp').value = currentTourName || ROUTE_NAME;
+  document.getElementById('saveTourStatus').textContent = '';
+  document.getElementById('tourManagerModal').classList.add('open');
+  await listTours();
+}
+function hideTourManager() {
+  document.getElementById('tourManagerModal').classList.remove('open');
+}
+
+/** Tourenliste vom Server laden und anzeigen */
+async function listTours() {
+  const el = document.getElementById('tourManagerList');
+  el.innerHTML = '<div style="font-size:11px;color:var(--muted)">Lädt…</div>';
+  try {
+    const r = await fetch('/api/tours');
+    if (!r.ok) throw new Error('HTTP ' + r.status + (r.status === 404 ? ' – Server neu starten?' : ''));
+    const tours = await r.json();
+    if (!tours.length) {
+      el.innerHTML = '<div style="font-size:11px;color:var(--muted);font-style:italic">Noch keine Touren gespeichert</div>';
+      return;
+    }
+    el.innerHTML = '';
+    for (const t of tours) {
+      const date = t.modified ? new Date(t.modified).toLocaleDateString('de-DE') : '';
+      const meta = [
+        t.route_name || t.name,
+        t.total_km  ? Math.round(t.total_km) + ' km' : '',
+        t.num_stages? t.num_stages + ' Etappen' : '',
+        date
+      ].filter(Boolean).join(' · ');
+      const div = document.createElement('div');
+      div.className = 'tour-item';
+      div.innerHTML = `
+        <div class="tour-item-info">
+          <div class="tour-item-name" title="${t.name}">${t.name}</div>
+          <div class="tour-item-meta">${meta}</div>
+        </div>
+        <div class="tour-item-btns">
+          <button class="tour-load-btn" onclick="loadTour('${t.id}')">📂 Laden</button>
+          <button class="tour-del-btn"  onclick="deleteTour('${t.id}',this)">🗑</button>
+        </div>`;
+      el.appendChild(div);
+    }
+  } catch(e) {
+    el.innerHTML = `<div style="font-size:11px;color:var(--red)">Fehler beim Laden der Tourliste: ${e.message}</div>`;
+  }
+}
+
+/** Aktuelle Tour auf dem Server speichern */
+async function saveTourNow() {
+  const name = document.getElementById('saveTourNameInp').value.trim() || ROUTE_NAME || 'Meine Tour';
+  const statusEl = document.getElementById('saveTourStatus');
+  statusEl.style.color = 'var(--muted)'; statusEl.textContent = '⏳ Speichert…';
+  try {
+    if (!ROUTE_PTS.length) throw new Error('Keine Route geladen');
+    const data = captureTourState(name);
+    // Nur überschreiben wenn Name unverändert — andernfalls neuen Eintrag anlegen
+    if (currentTourId && name === currentTourName) data.id = currentTourId;
+    const r = await fetch('/api/tours', {
+      method: 'POST',
+      headers: {'Content-Type':'application/json'},
+      body: JSON.stringify(data)
+    });
+    if (!r.ok) {
+      let msg = 'HTTP ' + r.status;
+      try { const e = await r.json(); msg = e.error || msg; } catch {}
+      throw new Error(msg);
+    }
+    const res = await r.json();
+    currentTourId   = res.id;
+    currentTourName = name;
+    statusEl.style.color = 'var(--green)'; statusEl.textContent = '✓ Gespeichert';
+    await listTours();
+  } catch(e) {
+    statusEl.style.color = 'var(--red)'; statusEl.textContent = '✗ ' + e.message;
+  }
+}
+
+/** Tour vom Server laden und vollständig wiederherstellen */
+async function loadTour(id) {
+  try {
+    const r = await fetch(`/api/tours/${id}`);
+    if (!r.ok) throw new Error('Tour nicht gefunden');
+    const data = await r.json();
+    currentTourId   = id;
+    currentTourName = data.name || null;
+    hideTourManager();
+    await restoreTourState(data);
+  } catch(e) {
+    alert('Laden fehlgeschlagen: ' + e.message);
+  }
+}
+
+/** Gespeicherten Tour-Zustand vollständig wiederherstellen */
+async function restoreTourState(data) {
+  // 1. Route
+  ROUTE_PTS        = data.route_sampled    || [];
+  ROUTE_ELEVATIONS = data.route_elevations || [];
+  ROUTE_NAME       = data.route_name || data.name || 'Tour';
+  NUM_STAGES       = data.num_stages       || 10;
+  TOTAL_KM         = data.total_km         || 0;
+  buildCumDist();
+  if (!TOTAL_KM && routeCumDist.length) TOTAL_KM = routeCumDist[routeCumDist.length - 1];
+  BASE_KM_INT = Math.round(TOTAL_KM / NUM_STAGES) || 1;
+
+  // 2. Etappen neu aufbauen + adjustKm wiederherstellen
+  rebuildStages();
+  (data.stage_adjustments || []).forEach((adj, i) => { if (stages[i]) stages[i].adjustKm = adj; });
+
+  // 3. STAGE_ENDS (Namen aus Tour-Daten, Koordinaten aus Route)
+  computeStageEnds(data.stage_names?.length === NUM_STAGES ? data.stage_names : null);
+
+  // 4. Suchergebnisse wiederherstellen
+  if (data.campsites) {
+    Object.entries(data.campsites).forEach(([siStr, camps]) => {
+      const si = parseInt(siStr);
+      if (stages[si]) stages[si].campsites = camps;
+    });
+  }
+
+  // 5. Camp-Targets (Routen zu/vom Camp) wiederherstellen
+  if (data.targets) {
+    Object.entries(data.targets).forEach(([siStr, saved]) => {
+      const si = parseInt(siStr);
+      if (isNaN(si) || si < 0 || si >= NUM_STAGES) return;
+      if (saved.campsite && !stages[si].campsites?.length)
+        stages[si].campsites = [{...saved.campsite, _restored: true}];
+      if (saved.tocamp) {
+        stages[si].campTarget = {
+          ci:       saved.isManual ? null : 0,
+          _manual:  !!saved.isManual,
+          _manualIdx: saved.isManual ? (saved.manualIdx ?? null) : undefined,
+          ...saved.tocamp
+        };
+      }
+      if (saved.fromPrev && si < NUM_STAGES - 1)
+        stages[si+1].campFromPrev = {...saved.fromPrev};
+    });
+  }
+
+  // 6. Manuelle Camps + Website-Overrides
+  manualCamps = data.manual_camps || {};
+  wsData      = data.websites     || {};
+
+  // 7. UI-Zustand zurücksetzen
+  expandedCampLists.clear();
+  activeStage = null; activeCamp = null; editingWs = null;
+  editMode = false;
+  document.getElementById('editModeBtn')?.classList.remove('active');
+  document.getElementById('legendDrag').style.display = 'none';
+  if (document.getElementById('reroutePanel').classList.contains('open'))
+    toggleReroutePanel();
+  _exitRouteEditMode();  // Route-Edit-Zustand zurücksetzen
+
+  updateHeaderStats();
+  buildMainRouteLayer();
+  if (ROUTE_PTS.length) leafletMap.fitBounds(L.polyline(ROUTE_PTS).getBounds(), {padding:[40,40]});
+  drawCustomRoutes(); render(); drawMarkers();
+
+  // 8. Alle Dateien auf dem Server aktualisieren
+  await saveRouteData();
+  await saveTargets();
+  await saveManualCamps();
+  try {
+    await fetch('/api/websites', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(wsData)});
+  } catch {}
+}
+
+/** Tour löschen */
+async function deleteTour(id, btnEl) {
+  if (!confirm('Tour wirklich löschen?')) return;
+  try {
+    await fetch(`/api/tours/${id}`, {method:'DELETE'});
+    btnEl.closest('.tour-item').remove();
+    const list = document.getElementById('tourManagerList');
+    if (!list.children.length)
+      list.innerHTML = '<div style="font-size:11px;color:var(--muted);font-style:italic">Noch keine Touren gespeichert</div>';
+  } catch {
+    alert('Löschen fehlgeschlagen');
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// BROUTER PROFIL — Hauptroute neu berechnen
+// ─────────────────────────────────────────────────────────────────────────────
+
+function toggleReroutePanel() {
+  const panel = document.getElementById('reroutePanel');
+  const opening = !panel.classList.contains('open');
+  panel.classList.toggle('open', opening);
+  if (opening) {
+    document.getElementById('rerouteProfileName').textContent = currentProfile;
+    populateRerouteStages();
+  }
+}
+
+function toggleAllReroute(checked) {
+  document.querySelectorAll('#rerouteStageList input[type=checkbox]').forEach(cb => cb.checked = checked);
+}
+
+function updateRerouteAll() {
+  const cbs = [...document.querySelectorAll('#rerouteStageList input[type=checkbox]')];
+  const allCb = document.getElementById('rerouteAllCb');
+  if (!allCb) return;
+  allCb.checked = cbs.length > 0 && cbs.every(cb => cb.checked);
+}
+
+function populateRerouteStages() {
+  const el = document.getElementById('rerouteStageList');
+  el.innerHTML = '';
+  if (!ROUTE_PTS.length) {
+    el.innerHTML = '<div style="font-size:11px;color:var(--muted);font-style:italic">Keine Route geladen</div>';
+    document.getElementById('rerouteApplyBtn').disabled = true;
+    return;
+  }
+  stages.forEach((st, i) => {
+    const endName = STAGE_ENDS[i]?.name || `Etappe ${i+1}`;
+    const lbl = document.createElement('label');
+    lbl.className = 'reroute-row';
+    lbl.innerHTML = `<input type="checkbox" data-si="${i}" checked onchange="updateRerouteAll()"> Etappe ${i+1}: ${endName} (~${Math.round(st.km)} km)`;
+    el.appendChild(lbl);
+  });
+  const allCb = document.getElementById('rerouteAllCb');
+  if (allCb) allCb.checked = true;
+  document.getElementById('rerouteApplyBtn').disabled = false;
+}
+
+/** Ausgewählte Etappen der Hauptroute mit dem aktuellen BRouter-Profil neu berechnen */
+async function applyReroute() {
+  const checkedSet = new Set(
+    [...document.querySelectorAll('#rerouteStageList input[type=checkbox]:checked')]
+      .map(cb => parseInt(cb.dataset.si))
+      .filter(si => !isNaN(si))
+  );
+  if (!checkedSet.size || !ROUTE_PTS.length) return;
+
+  const btn            = document.getElementById('rerouteApplyBtn');
+  btn.disabled         = true;
+  const stageNames     = STAGE_ENDS.map(se => se.name);
+  const isFullReroute  = checkedSet.size === NUM_STAGES;
+  const newSegKm       = {};  // si → tatsächliche km (nur partial)
+
+  try {
+    let newPts  = [];
+    let newEles = [];
+
+    if (isFullReroute) {
+      // ── Alle Etappen: ein einziger BRouter-Aufruf durch alle Etappenenden ──
+      btn.textContent = '⏳ Berechne Gesamtroute…';
+      const waypoints = [ROUTE_PTS[0], ...STAGE_ENDS.map(se => [se.lat, se.lon])];
+      const { pts, eles } = await brouterRoute(waypoints);
+      newPts  = pts;
+      newEles = eles;
+    } else {
+      // ── Teilweise: ein BRouter-Aufruf je ausgewählter Etappe ──
+      for (let i = 0; i < NUM_STAGES; i++) {
+        const startPt = i === 0 ? ROUTE_PTS[0] : [STAGE_ENDS[i - 1].lat, STAGE_ENDS[i - 1].lon];
+        const endPt   = [STAGE_ENDS[i].lat, STAGE_ENDS[i].lon];
+
+        let segPts, segEles;
+        if (checkedSet.has(i)) {
+          btn.textContent = `⏳ Etappe ${i + 1} / ${NUM_STAGES}…`;
+          const { pts, eles } = await brouterRoute([startPt, endPt]);
+          segPts  = pts;
+          segEles = eles;
+          newSegKm[i] = ptsKm(segPts);   // tatsächliche km für adjustKm
+        } else {
+          // Originalen ROUTE_PTS-Abschnitt beibehalten
+          const sIdx = i === 0 ? 0 : routeIdxAtKm(stageMainBoundaryKm(i - 1));
+          const eIdx = Math.min(routeIdxAtKm(stageMainBoundaryKm(i)), ROUTE_PTS.length - 1);
+          segPts  = ROUTE_PTS.slice(sIdx, eIdx + 1);
+          segEles = ROUTE_ELEVATIONS.length ? ROUTE_ELEVATIONS.slice(sIdx, eIdx + 1) : [];
+        }
+
+        if (i === 0) {
+          newPts  = segPts.slice();
+          newEles = segEles.slice();
+        } else {
+          newPts  = newPts.concat(segPts.slice(1));
+          newEles = newEles.concat(segEles.length ? segEles.slice(1) : []);
+        }
+      }
+    }
+
+    if (!newPts.length) throw new Error('BRouter lieferte keine Punkte');
+
+    // ── Neue Routengeometrie übernehmen ──
+    ROUTE_PTS        = newPts;
+    ROUTE_ELEVATIONS = newEles;
+    buildCumDist();
+    TOTAL_KM = routeCumDist[routeCumDist.length - 1] || TOTAL_KM;
+
+    if (isFullReroute) {
+      // Vollständig neu: BASE_KM_INT anpassen, alle Etappen zurücksetzen
+      BASE_KM_INT = Math.round(TOTAL_KM / NUM_STAGES) || 1;
+      rebuildStages();
+      computeStageEnds(stageNames);
+    } else {
+      // Partiell: BASE_KM_INT bleibt, nur die umgerouteten Etappen bekommen neues adjustKm
+      for (const [si, km] of Object.entries(newSegKm)) {
+        const i = parseInt(si);
+        if (i < NUM_STAGES - 1) {
+          // Letzte Etappe nutzt restKm() — kein adjustKm nötig
+          stages[i].adjustKm = km - BASE_KM_INT;
+        }
+        stages[i].campTarget   = null;
+        stages[i].campFromPrev = null;
+      }
+      // STAGE_ENDS-Positionen bleiben gültig — Route läuft durch diese Punkte
+    }
+
+    updateHeaderStats();
+    await saveRouteData();
+    try { await fetch('/api/targets', {method:'POST',headers:{'Content-Type':'application/json'},body:'{}'}); } catch {}
+
+    toggleReroutePanel();
+    buildMainRouteLayer();
+    if (ROUTE_PTS.length) leafletMap.fitBounds(L.polyline(ROUTE_PTS).getBounds(), {padding:[40,40]});
+    drawCustomRoutes(); render(); drawMarkers();
+
+  } catch(e) {
+    btn.textContent = '↺ Berechnen';
+    btn.disabled = false;
+    const errEl = document.getElementById('rerouteStageList');
+    errEl.insertAdjacentHTML('afterend',
+      `<div style="font-size:10px;color:var(--red);margin-top:6px">✗ ${e.message}</div>`);
+    return;
+  }
+
+  btn.textContent = '↺ Berechnen';
+  btn.disabled = false;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// ROUTE BEARBEITEN — Wegpunkte auf Routenlinie setzen, verschieben, löschen
+// ─────────────────────────────────────────────────────────────────────────────
+
+let routeEditMode    = false;
+let routeEditWps     = [];       // Zwischenpunkte [[lat,lon],...]
+let routeEditStart   = null;     // fester Startpunkt der Route
+let routeEditEnd     = null;     // fester Endpunkt der Route
+let routeEditHistory  = [];       // Undo-Stack [{wps, pts, eles, total_km, ...}, ...]
+let routeEditRedoStack = [];      // Redo-Stack (gleiche Struktur)
+let routeEditRouting = false;    // BRouter-Aufruf läuft gerade
+let routeEditMarkers = [];       // Leaflet-Marker für Wegpunkte
+
+function toggleRouteEditMode() {
+  if (!ROUTE_PTS.length) return;
+  routeEditMode = !routeEditMode;
+  document.getElementById('routeEditBtn').classList.toggle('active', routeEditMode);
+  const bar = document.getElementById('routeEditBar');
+  const leg = document.getElementById('legendRouteWp');
+
+  if (routeEditMode) {
+    routeEditStart = ROUTE_PTS[0].slice();
+    routeEditEnd   = ROUTE_PTS[ROUTE_PTS.length - 1].slice();
+    bar.style.display = 'flex';
+    if (leg) leg.style.display = '';
+    leafletMap.on('click', onMapClickRouteEdit);
+    drawRouteEditMarkers();
+  } else {
+    bar.style.display = 'none';
+    if (leg) leg.style.display = 'none';
+    leafletMap.off('click', onMapClickRouteEdit);
+    clearRouteEditMarkers();
+    // routeEditWps bleibt erhalten — beim erneuten Öffnen weiter editierbar
+  }
+}
+
+/** Wird von buildMainRouteLayer und restoreTourState aufgerufen */
+function _exitRouteEditMode() {
+  routeEditMode      = false;
+  routeEditWps       = [];
+  routeEditHistory   = [];
+  routeEditRedoStack = [];
+  routeEditStart     = null;
+  routeEditEnd       = null;
+  leafletMap?.off('click', onMapClickRouteEdit);
+  clearRouteEditMarkers();
+  const bar = document.getElementById('routeEditBar');
+  const btn = document.getElementById('routeEditBtn');
+  const leg = document.getElementById('legendRouteWp');
+  if (bar) bar.style.display = 'none';
+  if (btn) btn.classList.remove('active');
+  if (leg) leg.style.display = 'none';
+  const undoBtn = document.getElementById('routeEditUndoBtn');
+  if (undoBtn) undoBtn.disabled = true;
+}
+
+function onMapClickRouteEdit(e) {
+  if (routeEditRouting) return;
+  _insertRouteWp(e.latlng.lat, e.latlng.lng);
+}
+
+async function _insertRouteWp(lat, lon) {
+  const anchors    = [routeEditStart, ...routeEditWps, routeEditEnd];
+  const anchorIdxs = anchors.map(pt => nearestRoutePt(pt[0], pt[1], 0, ROUTE_PTS.length - 1));
+  const clickIdx   = nearestRoutePt(lat, lon, 0, ROUTE_PTS.length - 1);
+
+  let insertAt = routeEditWps.length;
+  for (let j = 0; j < anchorIdxs.length - 1; j++) {
+    if (clickIdx >= anchorIdxs[j] && clickIdx <= anchorIdxs[j + 1]) {
+      insertAt = j; break;
+    }
+  }
+
+  // Adjacent anchor boundaries for this segment
+  const anchorFrom = anchorIdxs[insertAt];
+  const anchorTo   = anchorIdxs[insertAt + 1];
+
+  // Limit splice to ±LOCAL_KM around the click — prevents rerouting the whole route
+  // when no intermediate waypoints exist yet (anchorFrom=0, anchorTo=last).
+  const LOCAL_KM = 5;
+  const clickKm  = routeCumDist[clickIdx];
+  const fromKm   = Math.max(routeCumDist[anchorFrom], clickKm - LOCAL_KM);
+  const toKm     = Math.min(routeCumDist[anchorTo],   clickKm + LOCAL_KM);
+  const fromIdx  = routeIdxAtKm(fromKm);
+  const toIdx    = routeIdxAtKm(toKm);
+
+  const prev = routeEditWps.map(w => w.slice());
+  routeEditWps.splice(insertAt, 0, [lat, lon]);
+
+  await _rerouteAndSplice(
+    fromIdx, toIdx,
+    [ROUTE_PTS[fromIdx], [lat, lon], ROUTE_PTS[toIdx]],
+    prev
+  );
+}
+
+// Local segment reroute: only recalculates ROUTE_PTS[fromIdx..toIdx], preserving all
+// stage boundaries and waypoints outside that segment.
+async function _rerouteAndSplice(fromIdx, toIdx, brouterWps, prevWps) {
+  if (routeEditRouting) return;
+  routeEditRouting = true;
+  const statusEl = document.getElementById('routeEditStatus');
+  if (statusEl) statusEl.textContent = '⏳ Berechne…';
+
+  const snapPts    = ROUTE_PTS.slice();
+  const snapEles   = ROUTE_ELEVATIONS.slice();
+  const snapKm     = TOTAL_KM;
+  const snapBase   = BASE_KM_INT;
+  const snapAdjKms = stages.map(s => s.adjustKm);
+  const snapEnds   = STAGE_ENDS.map(se => ({...se}));
+
+  const oldSegKm      = routeCumDist[toIdx] - routeCumDist[fromIdx];
+  const spliceStartKm = routeCumDist[fromIdx];
+
+  // Capture stage index ranges in OLD ROUTE_PTS before the splice
+  const oldStageRanges = stages.map((_, si) => ({
+    start: si > 0 ? routeIdxAtKm(stageMainBoundaryKm(si - 1)) : 0,
+    end:   si < NUM_STAGES - 1 ? routeIdxAtKm(stageMainBoundaryKm(si)) : ROUTE_PTS.length - 1
+  }));
+
+  try {
+    const { pts: newPts, eles: newEles } = await brouterRoute(brouterWps);
+
+    routeEditHistory.push({
+      wps: prevWps ?? [], pts: snapPts, eles: snapEles,
+      total_km: snapKm, base: snapBase, adjustKms: snapAdjKms, stageEnds: snapEnds
+    });
+    routeEditRedoStack = [];
+    const redoBtn = document.getElementById('routeEditRedoBtn');
+    if (redoBtn) redoBtn.disabled = true;
+
+    // Splice new segment — only fromIdx..toIdx is replaced
+    ROUTE_PTS        = [...ROUTE_PTS.slice(0, fromIdx),  ...newPts,  ...ROUTE_PTS.slice(toIdx + 1)];
+    ROUTE_ELEVATIONS = [...ROUTE_ELEVATIONS.slice(0, fromIdx), ...newEles, ...ROUTE_ELEVATIONS.slice(toIdx + 1)];
+
+    buildCumDist();
+    TOTAL_KM = routeCumDist[routeCumDist.length - 1] || TOTAL_KM;
+
+    // Shift adjustKm of exactly the first stage boundary after the spliced segment
+    // so that all subsequent boundaries stay at their geographic positions.
+    const newSegKm = routeCumDist[fromIdx + newPts.length - 1] - routeCumDist[fromIdx];
+    const deltaKm  = newSegKm - oldSegKm;
+    if (Math.abs(deltaKm) > 0.001) {
+      for (let i = 0; i < NUM_STAGES - 1; i++) {
+        if (stageMainBoundaryKm(i) > spliceStartKm + 0.001) {
+          stages[i].adjustKm += deltaKm;
+          break;
+        }
+      }
+    }
+
+    // Refresh STAGE_ENDS from new route positions
+    for (let i = 0; i < NUM_STAGES - 1; i++) {
+      const bKm = stageMainBoundaryKm(i);
+      const idx = Math.min(routeIdxAtKm(bKm), ROUTE_PTS.length - 1);
+      STAGE_ENDS[i].lat = ROUTE_PTS[idx][0];
+      STAGE_ENDS[i].lon = ROUTE_PTS[idx][1];
+    }
+    if (STAGE_ENDS[NUM_STAGES - 1]) {
+      const lp = ROUTE_PTS[ROUTE_PTS.length - 1];
+      STAGE_ENDS[NUM_STAGES - 1].lat = lp[0];
+      STAGE_ENDS[NUM_STAGES - 1].lon = lp[1];
+    }
+
+    // Only clear camp targets for stages whose route segment overlaps the splice.
+    // Stages outside the splice keep their targets; stale branchIdx/rejoinIdx are shifted.
+    const indexShift = newPts.length - (toIdx - fromIdx + 1);
+    stages.forEach((st, si) => {
+      st.routeLoading = false;
+      const { start: stStart, end: stEnd } = oldStageRanges[si];
+      if (fromIdx <= stEnd && toIdx >= stStart) {
+        // Splice touches this stage — camp geometry may be invalid
+        st.campTarget   = null;
+        st.campFromPrev = null;
+      } else {
+        // Splice is outside this stage — preserve targets, fix stale indices
+        if (st.campTarget && st.campTarget.branchIdx > toIdx)
+          st.campTarget.branchIdx += indexShift;
+        if (st.campFromPrev && st.campFromPrev.rejoinIdx > toIdx)
+          st.campFromPrev.rejoinIdx += indexShift;
+      }
+    });
+
+    updateHeaderStats();
+    buildMainRouteLayer();
+    clearRouteEditMarkers();
+    drawRouteEditMarkers();
+    drawCustomRoutes(); render(); drawMarkers();
+
+    if (statusEl) statusEl.textContent = '';
+    const undoBtn = document.getElementById('routeEditUndoBtn');
+    if (undoBtn) undoBtn.disabled = false;
+
+  } catch (e) {
+    if (prevWps !== undefined) routeEditWps = prevWps;
+    if (statusEl) {
+      statusEl.style.color = 'var(--red)';
+      statusEl.textContent = '✗ ' + e.message.slice(0, 50);
+      setTimeout(() => { if (statusEl) { statusEl.textContent = ''; statusEl.style.color = 'var(--accent)'; } }, 3000);
+    }
+    clearRouteEditMarkers();
+    drawRouteEditMarkers();
+  }
+  routeEditRouting = false;
+}
+
+function drawRouteEditMarkers() {
+  clearRouteEditMarkers();
+  if (!routeEditMode || !ROUTE_PTS.length) return;
+
+  routeEditWps.forEach((wp, wi) => {
+    const icon = L.divIcon({
+      className: '',
+      html: `<div style="width:14px;height:14px;background:#a855f7;border:2.5px solid #fff;border-radius:50%;cursor:grab;box-shadow:0 2px 6px rgba(0,0,0,.5)"></div>`,
+      iconSize: [14, 14], iconAnchor: [7, 7]
+    });
+    const m = L.marker([wp[0], wp[1]], { icon, draggable: true, zIndexOffset: 900 });
+    m.addTo(leafletMap);
+    m.bindTooltip('Wegpunkt · Doppelklick zum Löschen', { direction: 'top', offset: [0, -10] });
+
+    const LOCAL_KM = 5;
+    let dragPrev = null;
+    m.on('dragstart', () => {
+      dragPrev = routeEditWps.map(w => w.slice());
+    });
+    m.on('drag', e => { routeEditWps[wi] = [e.latlng.lat, e.latlng.lng]; });
+    m.on('dragend', async () => {
+      const newPos = routeEditWps[wi];
+      // Compute local window around the NEW position — avoids full-route reroute
+      const ancs  = [routeEditStart, ...routeEditWps, routeEditEnd];
+      const aidxs = ancs.map(pt => nearestRoutePt(pt[0], pt[1], 0, ROUTE_PTS.length - 1));
+      const prevAnchorIdx = aidxs[wi];
+      const nextAnchorIdx = aidxs[wi + 2];
+      const newPosIdx = nearestRoutePt(newPos[0], newPos[1], 0, ROUTE_PTS.length - 1);
+      const newPosKm  = routeCumDist[newPosIdx];
+      const fromKm    = Math.max(routeCumDist[prevAnchorIdx], newPosKm - LOCAL_KM);
+      const toKm      = Math.min(routeCumDist[nextAnchorIdx], newPosKm + LOCAL_KM);
+      const fromIdx   = routeIdxAtKm(fromKm);
+      const toIdx     = routeIdxAtKm(toKm);
+      await _rerouteAndSplice(
+        fromIdx, toIdx,
+        [ROUTE_PTS[fromIdx], newPos, ROUTE_PTS[toIdx]],
+        dragPrev
+      );
+    });
+    m.on('dblclick', async e => {
+      L.DomEvent.stopPropagation(e);
+      const ancs  = [routeEditStart, ...routeEditWps, routeEditEnd];
+      const aidxs = ancs.map(pt => nearestRoutePt(pt[0], pt[1], 0, ROUTE_PTS.length - 1));
+      const prevAnchorIdx = aidxs[wi];
+      const nextAnchorIdx = aidxs[wi + 2];
+      const wpIdx  = aidxs[wi + 1]; // route index of the waypoint being deleted
+      const wpKm   = routeCumDist[wpIdx];
+      const fromKm = Math.max(routeCumDist[prevAnchorIdx], wpKm - LOCAL_KM);
+      const toKm   = Math.min(routeCumDist[nextAnchorIdx], wpKm + LOCAL_KM);
+      const idxFrom = routeIdxAtKm(fromKm);
+      const idxTo   = routeIdxAtKm(toKm);
+      const prev = routeEditWps.map(w => w.slice());
+      routeEditWps.splice(wi, 1);
+      await _rerouteAndSplice(
+        idxFrom, idxTo,
+        [ROUTE_PTS[idxFrom], ROUTE_PTS[idxTo]],
+        prev
+      );
+    });
+    routeEditMarkers.push(m);
+  });
+}
+
+function clearRouteEditMarkers() {
+  routeEditMarkers.forEach(m => leafletMap.removeLayer(m));
+  routeEditMarkers = [];
+}
+
+function _captureRouteEditState() {
+  return {
+    wps:       routeEditWps.slice(),
+    pts:       ROUTE_PTS.slice(),
+    eles:      ROUTE_ELEVATIONS.slice(),
+    total_km:  TOTAL_KM,
+    base:      BASE_KM_INT,
+    adjustKms: stages.map(s => s.adjustKm),
+    stageEnds: STAGE_ENDS.map(se => ({...se}))
+  };
+}
+
+function _applyRouteEditState(s) {
+  ROUTE_PTS        = s.pts.slice();
+  ROUTE_ELEVATIONS = s.eles.slice();
+  TOTAL_KM         = s.total_km;
+  routeEditWps     = s.wps ? s.wps.slice() : [];
+  routeEditStart   = ROUTE_PTS[0].slice();
+  routeEditEnd     = ROUTE_PTS[ROUTE_PTS.length - 1].slice();
+  buildCumDist();
+  if (!TOTAL_KM) TOTAL_KM = routeCumDist[routeCumDist.length - 1];
+  BASE_KM_INT = s.base ?? (Math.round(TOTAL_KM / NUM_STAGES) || 1);
+  if (s.stageEnds) STAGE_ENDS = s.stageEnds.map(se => ({...se}));
+  if (s.adjustKms) s.adjustKms.forEach((adj, i) => { if (stages[i]) stages[i].adjustKm = adj; });
+  stages.forEach(st => { st.campTarget = null; st.campFromPrev = null; st.routeLoading = false; });
+}
+
+async function undoRouteEdit() {
+  if (!routeEditHistory.length) return;
+  routeEditRedoStack.push(_captureRouteEditState());
+  _applyRouteEditState(routeEditHistory.pop());
+
+  updateHeaderStats();
+  buildMainRouteLayer();
+  clearRouteEditMarkers();
+  drawRouteEditMarkers();
+  drawCustomRoutes(); render(); drawMarkers();
+
+  document.getElementById('routeEditUndoBtn').disabled = routeEditHistory.length === 0;
+  document.getElementById('routeEditRedoBtn').disabled = false;
+
+  await saveRouteData();
+}
+
+async function redoRouteEdit() {
+  if (!routeEditRedoStack.length) return;
+  routeEditHistory.push(_captureRouteEditState());
+  _applyRouteEditState(routeEditRedoStack.pop());
+
+  updateHeaderStats();
+  buildMainRouteLayer();
+  clearRouteEditMarkers();
+  drawRouteEditMarkers();
+  drawCustomRoutes(); render(); drawMarkers();
+
+  document.getElementById('routeEditUndoBtn').disabled = false;
+  document.getElementById('routeEditRedoBtn').disabled = routeEditRedoStack.length === 0;
+
+  await saveRouteData();
+}
+
+// ── OSM Campingplatz-Overlay ──────────────────────────────────────────────────
+let _campOsmLayerGroup = null;
+let _campOsmEnabled    = false;
+let _campOsmTimer      = null;
+let _campOsmBusy       = false;
+let _campOsmCache      = {};   // bbox-key → elements[]
+
+const CAMP_OSM_MIN_ZOOM = 13;  // ~ 1km Maßstab
+
+function toggleCampOsmLayer() {
+  _campOsmEnabled = !_campOsmEnabled;
+  document.getElementById('campOsmBtn')?.classList.toggle('active', _campOsmEnabled);
+  if (!_campOsmEnabled) {
+    _campOsmLayerGroup?.clearLayers();
+    _setCampOsmHint('');
+    return;
+  }
+  _scheduleCampOsm(0);
+}
+
+function _scheduleCampOsm(delay = 700) {
+  clearTimeout(_campOsmTimer);
+  _campOsmTimer = setTimeout(_fetchCampOsm, delay);
+}
+
+async function _fetchCampOsm() {
+  if (!_campOsmEnabled || !leafletMap || !_campOsmLayerGroup) return;
+
+  const zoom = leafletMap.getZoom();
+  if (zoom < CAMP_OSM_MIN_ZOOM) {
+    _campOsmLayerGroup.clearLayers();
+    _setCampOsmHint(`⛺ Weiter reinzoomen um Campingplätze zu sehen`);
+    return;
+  }
+  _setCampOsmHint('');
+
+  if (_campOsmBusy) return;
+  _campOsmBusy = true;
+  _setCampOsmLoading(true);
+
+  // Bbox auf 0.05°-Raster runden → Cache-Trefferrate erhöhen
+  const b    = leafletMap.getBounds();
+  const g    = 0.05;
+  const s    = (Math.floor(b.getSouth() / g) * g).toFixed(4);
+  const w    = (Math.floor(b.getWest()  / g) * g).toFixed(4);
+  const n    = (Math.ceil( b.getNorth() / g) * g).toFixed(4);
+  const e    = (Math.ceil( b.getEast()  / g) * g).toFixed(4);
+  const key  = `${s},${w},${n},${e}`;
+
+  try {
+    let elements = _campOsmCache[key];
+    if (!elements) {
+      const q = `[out:json][timeout:15];(`
+        + `node["tourism"="camp_site"](${s},${w},${n},${e});`
+        + `way["tourism"="camp_site"](${s},${w},${n},${e});`
+        + `);out center tags;`;
+      const data = await overpassFetch(q);
+      elements = data.elements;
+      _campOsmCache[key] = elements;
+      // Cache auf 60 Einträge begrenzen
+      const keys = Object.keys(_campOsmCache);
+      if (keys.length > 60) delete _campOsmCache[keys[0]];
+    }
+
+    _campOsmLayerGroup.clearLayers();
+    let count = 0;
+    elements.forEach(el => {
+      const lat = el.lat ?? el.center?.lat;
+      const lon = el.lon ?? el.center?.lon;
+      if (!lat || !lon) return;
+      count++;
+      const t   = el.tags || {};
+      const bg  = '#1a7a3c';
+      const icon = L.divIcon({
+        className: '',
+        html: `<div style="width:26px;height:26px;background:${bg};border:2px solid rgba(255,255,255,.85);border-radius:5px;display:flex;align-items:center;justify-content:center;font-size:15px;box-shadow:0 2px 6px rgba(0,0,0,.5);cursor:pointer" title="${(t.name||'').replace(/"/g,"'")}">⛺</div>`,
+        iconSize: [26, 26], iconAnchor: [13, 13]
+      });
+      const m = L.marker([lat, lon], { icon, zIndexOffset: 300 });
+      m.bindPopup(_campOsmPopupHtml(t, lat, lon), { maxWidth: 310, className: 'co-popup' });
+      _campOsmLayerGroup.addLayer(m);
+    });
+
+    if (count === 0) _setCampOsmHint('⛺ Keine Campingplätze im aktuellen Ausschnitt');
+
+  } catch(err) {
+    _setCampOsmHint('⚠ ' + err.message.slice(0, 50));
+  }
+  _campOsmBusy = false;
+  _setCampOsmLoading(false);
+}
+
+function _campOsmPopupHtml(t, lat, lon) {
+  const name    = t.name || 'Campingplatz';
+  const street  = t['addr:street']
+    ? t['addr:street'] + (t['addr:housenumber'] ? ' ' + t['addr:housenumber'] : '')
+    : null;
+  const city    = [t['addr:postcode'], t['addr:city']].filter(Boolean).join(' ') || null;
+  const web     = t.website || t['contact:website'] || t['contact:url'] || t.url || null;
+  const phone   = t.phone   || t['contact:phone']   || null;
+  const email   = t.email   || t['contact:email']   || null;
+  const oh      = t.opening_hours || null;
+  const fee     = t.fee;
+  const cap     = t.capacity;
+  const showers = t.shower;
+  const dogs    = t['dog'];
+  const access  = t.access && t.access !== 'public' ? t.access : null;
+  const tents   = t['tents'];
+  const surface = t['surface'];
+
+  const row = (icon, txt) => txt
+    ? `<div class="co-row"><span>${icon}</span><span>${txt}</span></div>`
+    : '';
+
+  const feeLabel = fee === 'yes' ? 'Gebührenpflichtig'
+                 : fee === 'no'  ? 'Kostenlos'
+                 : fee           ? fee : null;
+
+  return `<div class="co-inner">
+    <div class="co-title">${name}</div>
+    ${row('📍', [street, city].filter(Boolean).join(', '))}
+    ${row('📞', phone ? `<a href="tel:${phone}">${phone}</a>` : null)}
+    ${row('✉️', email ? `<a href="mailto:${email}">${email}</a>` : null)}
+    ${row('🕐', oh)}
+    ${row('💶', feeLabel)}
+    ${row('👥', cap ? `Kapazität: ${cap}` : null)}
+    ${row('🚿', showers === 'yes' ? 'Duschen vorhanden' : showers === 'no' ? 'Keine Duschen' : null)}
+    ${row('⛺', tents === 'yes' ? 'Zelte erlaubt' : tents === 'no' ? 'Keine Zelte' : null)}
+    ${row('🐕', dogs === 'yes' ? 'Hunde erlaubt' : dogs === 'no' ? 'Keine Hunde' : null)}
+    ${row('🔒', access ? `Zugang: ${access}` : null)}
+    ${row('🛤️', surface ? `Untergrund: ${surface}` : null)}
+    ${web ? `<div class="co-row"><span>🔗</span><span><a href="${web}" target="_blank" rel="noopener">${web.replace(/^https?:\/\/(www\.)?/,'').replace(/\/$/,'').slice(0,40)}</a></span></div>` : ''}
+    <div class="co-osm-link">
+      <a href="https://www.openstreetmap.org/?mlat=${lat}&mlon=${lon}&zoom=16" target="_blank">In OSM öffnen</a>
+      &nbsp;·&nbsp;
+      <a href="https://www.google.com/maps?q=${lat},${lon}" target="_blank">Google Maps</a>
+    </div>
+  </div>`;
+}
+
+function _setCampOsmHint(msg) {
+  const el = document.getElementById('campOsmHint');
+  if (!el) return;
+  el.textContent = msg;
+  el.style.display = msg ? '' : 'none';
+}
+function _setCampOsmLoading(on) {
+  const btn = document.getElementById('campOsmBtn');
+  if (btn) btn.style.opacity = on ? '0.5' : '1';
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+
+Promise.all([wsInit(), loadRoute(), loadManualCamps()]).then(async () => {
+  initMap();
+  await loadTargets();   // after loadRoute so NUM_STAGES is correct
+  drawCustomRoutes(); render();
+});
+</script>
+</body>
+</html>
