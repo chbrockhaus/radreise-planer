@@ -12,7 +12,7 @@ echo.
 echo Committe und pushe...
 git add radreise-planer\radreise_planer.html
 git commit -m "%MSG%"
-git push
+git push origin master
 
 echo.
 echo Fertig! Home Assistant kann das Add-on jetzt neu bauen.
