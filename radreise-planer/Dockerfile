@@ -17,7 +17,7 @@ RUN apk add --no-cache openjdk21-jre-headless \
 # BRouter herunterladen und installieren
 RUN mkdir -p /opt/brouter/profiles2 /opt/brouter/customprofiles && \
     curl -fsSL --retry 3 -o /tmp/brouter.zip \
-        "https://github.com/abrensch/brouter/releases/download/1.7.0/brouter_1.7.0.zip" && \
+        "https://github.com/abrensch/brouter/releases/download/v1.7.9/brouter-1.7.9.zip" && \
     unzip -q /tmp/brouter.zip -d /tmp/brtemp && \
     find /tmp/brtemp -name "brouter.jar" | head -1 | xargs -I{} cp {} /opt/brouter/ && \
     find /tmp/brtemp -type d -name "profiles2" | head -1 | \
