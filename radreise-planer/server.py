@@ -37,8 +37,15 @@ ROUTE_DATA_FILE        = os.path.join(DATA_DIR, 'route_data_custom.json')
 TOURS_DIR              = os.path.join(DATA_DIR, 'tours')
 SEGMENTS_REFRESHED_FILE = os.path.join(DATA_DIR, 'segments_refreshed.json')
 
-BROUTER_PORT = 17777
-APP_DIR      = os.path.dirname(os.path.abspath(__file__))
+BROUTER_PORT    = 17777
+APP_DIR         = os.path.dirname(os.path.abspath(__file__))
+TILE_CACHE_DIR  = os.path.join(DATA_DIR, 'tile_cache')
+
+TILE_SOURCES = {
+    'osm':     'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',
+    'cyclosm': 'https://{s}.tile-cyclosm.openstreetmap.fr/cyclosm/{z}/{x}/{y}.png',
+    'topo':    'https://{s}.tile.opentopomap.org/{z}/{x}/{y}.png',
+}
 
 brouter_proc = None
 
@@ -214,6 +221,13 @@ class Handler(http.server.SimpleHTTPRequestHandler):
                 else:
                     status = _segment_status.get(seg, 'unknown')
                     self._json(200, {'status': status, 'segment': seg})
+        elif p.startswith('/api/tiles/'):
+            # /api/tiles/{layer}/{z}/{x}/{y}.png
+            parts = p[len('/api/tiles/'):].split('/')
+            if len(parts) == 4 and parts[3].endswith('.png'):
+                self._proxy_tile(parts[0], parts[1], parts[2], parts[3][:-4])
+            else:
+                self.send_response(404); self.end_headers()
         elif p.startswith('/api/brouter'):
             self._proxy_brouter()
         elif p.startswith('/api/overpass'):
@@ -308,6 +322,63 @@ class Handler(http.server.SimpleHTTPRequestHandler):
         self.send_response(200)
         self._cors()
         self.end_headers()
+
+    # ── Kachel-Proxy ──────────────────────────────────────────────────────────
+    def _proxy_tile(self, layer, z, x, y):
+        """
+        Proxied OSM-Kacheln – umgeht Browser-Referrer-Policies (z.B. Firefox/HA-Ingress).
+        Kacheln werden lokal gecacht (7 Tage) um OSM-Server zu entlasten.
+        """
+        if layer not in TILE_SOURCES:
+            self.send_response(404); self.end_headers(); return
+        try:
+            int(z); int(x); int(y)
+        except ValueError:
+            self.send_response(400); self.end_headers(); return
+
+        # Cache-Lookup
+        cache_path = os.path.join(TILE_CACHE_DIR, layer, z, x, f'{y}.png')
+        if os.path.exists(cache_path):
+            try:
+                with open(cache_path, 'rb') as f:
+                    data = f.read()
+                self.send_response(200)
+                self.send_header('Content-Type', 'image/png')
+                self.send_header('Cache-Control', 'public, max-age=604800')
+                self._cors()
+                self.end_headers()
+                self.wfile.write(data)
+                return
+            except Exception:
+                pass  # Fallback: neu laden
+
+        # Upstream-Fetch
+        s   = ['a', 'b', 'c'][(int(x) + int(y)) % 3]
+        url = TILE_SOURCES[layer].format(s=s, z=z, x=x, y=y)
+        try:
+            req = urllib.request.Request(url, headers={
+                'User-Agent': 'Mozilla/5.0 (compatible; RadreisePlaner/1.2; +https://github.com/chbrockhaus/radreise-planer)',
+                'Referer':    'https://www.openstreetmap.org/',
+                'Accept':     'image/png,image/*,*/*',
+            })
+            with urllib.request.urlopen(req, timeout=15) as resp:
+                data = resp.read()
+                ct   = resp.headers.get('Content-Type', 'image/png')
+            # Atomisches Cache-Schreiben
+            os.makedirs(os.path.dirname(cache_path), exist_ok=True)
+            tmp = cache_path + '.tmp'
+            with open(tmp, 'wb') as f: f.write(data)
+            os.replace(tmp, cache_path)
+            self.send_response(200)
+            self.send_header('Content-Type', ct)
+            self.send_header('Cache-Control', 'public, max-age=604800')
+            self._cors()
+            self.end_headers()
+            self.wfile.write(data)
+        except urllib.error.HTTPError as e:
+            self.send_response(e.code); self.end_headers()
+        except Exception:
+            self.send_response(502); self.end_headers()
 
     # ── BRouter-Proxy ─────────────────────────────────────────────────────────
     def _proxy_overpass(self):
