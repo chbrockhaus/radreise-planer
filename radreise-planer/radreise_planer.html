@@ -103,6 +103,23 @@ header{background:var(--surface);border-bottom:1px solid var(--border);padding:9
 #segmentRefreshNotice.visible{display:flex}
 #segmentRefreshNotice .srn-title{color:var(--green,#4ade80);font-weight:600;font-size:13px;display:flex;align-items:center;gap:7px}
 #segmentRefreshNotice .srn-body{color:var(--muted);font-size:11px;line-height:1.6}
+/* ── Campingplatz Karten-Links ── */
+.camp-map-links{display:flex;gap:10px;margin-top:4px}
+.camp-map-link{font-size:10px;color:var(--accent);text-decoration:none;opacity:.75}
+.camp-map-link:hover{opacity:1;text-decoration:underline}
+/* ── Etappen-Notiz ── */
+.stage-note-ta{width:100%;box-sizing:border-box;background:var(--surface2,#1e2236);border:1px solid var(--border);border-radius:4px;color:var(--text,#e0e4f0);font-size:11px;font-family:inherit;padding:5px 8px;resize:vertical;min-height:36px;margin-top:6px;display:block}
+.stage-note-ta::placeholder{color:var(--muted);font-style:italic}
+.stage-note-ta:focus{outline:none;border-color:var(--accent)}
+/* ── Tour-Minimap ── */
+.tour-preview{flex-shrink:0;width:90px;height:48px;border-radius:4px;background:var(--surface2,#1e2236);border:1px solid var(--border);overflow:hidden;display:flex;align-items:center;justify-content:center}
+/* ── Kachel-Download Toast ── */
+#tileDownloadToast{position:fixed;bottom:80px;left:50%;transform:translateX(-50%);background:rgba(18,22,32,.97);border:1px solid var(--accent,#3d8eff);border-radius:10px;padding:12px 18px;font-size:12px;color:var(--fg);z-index:9700;display:none;flex-direction:column;gap:8px;min-width:280px;box-shadow:0 4px 20px rgba(0,0,0,.5)}
+#tileDownloadToast.visible{display:flex}
+#tileDownloadToast .tdt-title{font-weight:600;color:var(--accent);display:flex;align-items:center;gap:7px}
+#tileDownloadToast .tdt-btns{display:flex;gap:8px;justify-content:flex-end;margin-top:2px}
+#tileDownloadToast .tdt-ok{background:var(--accent);color:#fff;border:none;border-radius:4px;padding:5px 14px;cursor:pointer;font-size:11px}
+#tileDownloadToast .tdt-cancel{background:transparent;color:var(--muted);border:1px solid var(--border);border-radius:4px;padding:5px 14px;cursor:pointer;font-size:11px}
 #segmentRefreshNotice .srn-segs{font-family:monospace;color:var(--fg);font-size:11px;word-break:break-all}
 #segmentRefreshNotice .srn-ok{align-self:flex-end;background:var(--green,#4ade80);color:#000;border:none;border-radius:5px;padding:6px 22px;cursor:pointer;font-size:12px;font-weight:700;margin-top:2px}
 #segmentRefreshNotice .srn-ok:hover{opacity:.85}
@@ -283,6 +300,14 @@ header{background:var(--surface);border-bottom:1px solid var(--border);padding:9
     </div>
     <div id="campOsmHint" class="camp-osm-hint" style="display:none"></div>
     <div id="overpassHint"></div>
+    <div id="tileDownloadToast">
+      <div class="tdt-title"><span class="spin" style="width:12px;height:12px;border-width:2px" id="tileDownloadSpinner" style="display:none"></span><span id="tileDownloadMsg">Routing-Daten fehlen</span></div>
+      <div id="tileDownloadSub" style="font-size:11px;color:var(--muted)"></div>
+      <div class="tdt-btns">
+        <button class="tdt-cancel" id="tileDownloadCancelBtn" onclick="hideTileDownloadToast()">Abbrechen</button>
+        <button class="tdt-ok" id="tileDownloadOkBtn" onclick="confirmTileDownload()">⬇ Herunterladen (~100 MB)</button>
+      </div>
+    </div>
     <div id="segmentRefreshNotice">
       <div class="srn-title">✓ Routing-Kacheln aktualisiert</div>
       <div class="srn-body">Die BRouter-Routing-Daten wurden neu heruntergeladen:<br>
@@ -449,6 +474,7 @@ function createStage(i) {
   return {
     i,
     adjustKm: 0,
+    note: '',            // Freitext-Notiz des Nutzers
     get km() {
       if (this.campTarget) return Math.round(this.campTarget.km * 10) / 10;
       if (this.campFromPrev) return Math.round(this.campFromPrev.km * 10) / 10;
@@ -1228,6 +1254,10 @@ function render(){
       ${st.campFromPrev!=null&&i>0?`<div class="route-status" style="color:var(--accent)">↩ Weiterroute: ${Math.round(st.campFromPrev.km)} km</div>`:''}
       ${campHtml}
       ${renderManualCamps(i)}
+      <textarea class="stage-note-ta" placeholder="📝 Notizen zur Etappe (Bestätigung, Telefon, Hinweise…)"
+        onclick="event.stopPropagation()" onkeydown="event.stopPropagation()"
+        onchange="stages[${i}].note=this.value"
+      >${st.note||''}</textarea>
       <button class="exp-btn" onclick="exportStageGPX(${i},event)">↓ Etappe ${i+1} als GPX</button>
     `;
     c.appendChild(div);
@@ -1271,10 +1301,15 @@ function renderCamp(c, si, ci){
     targetHtml = `<button class="target-btn" onclick="event.stopPropagation();setAsTarget(${si},${ci})">⛳ Als Etappenziel setzen</button>`;
   }
 
+  const mapLinks = c.lat && c.lon ? `<div class="camp-map-links">
+    <a class="camp-map-link" href="https://maps.google.com/?q=${c.lat},${c.lon}" target="_blank" onclick="event.stopPropagation()">📍 Google Maps</a>
+    <a class="camp-map-link" href="https://www.openstreetmap.org/?mlat=${c.lat}&mlon=${c.lon}&zoom=15" target="_blank" onclick="event.stopPropagation()">🗺 OSM</a>
+  </div>` : '';
   return `<div class="camp${isActive?' camp-active':''}${isTarget?' camp-active':''}" onclick="selectCamp(${si},${ci})">
     <div class="cn">${c.name}</div>
     ${c.address?`<div class="camp-addr">📍 ${c.address}</div>`:''}
     <div class="cd">${c.lat ? liveDistKm(si,c).toFixed(1)+' km vom Etappenende' : ''}</div>
+    ${mapLinks}
     <span class="badge ${cls}">${lbl}</span>
     ${wsHtml}
     ${targetHtml}
@@ -1517,7 +1552,78 @@ function ptsKm(pts) {
   return d;
 }
 
-async function brouterRoute(waypoints) {
+// ── On-demand Kachel-Download ─────────────────────────────────────────────────
+function latlonToSegment(lat, lon) {
+  const e = Math.floor(lon / 5) * 5;
+  const n = Math.floor(lat / 5) * 5;
+  return `${e >= 0 ? 'E' : 'W'}${Math.abs(e)}_N${n}`;
+}
+
+let _tileDownloadResolve = null;
+function hideTileDownloadToast() {
+  document.getElementById('tileDownloadToast').classList.remove('visible');
+  if (_tileDownloadResolve) { _tileDownloadResolve(false); _tileDownloadResolve = null; }
+}
+
+async function confirmTileDownload() {
+  const okBtn  = document.getElementById('tileDownloadOkBtn');
+  const canBtn = document.getElementById('tileDownloadCancelBtn');
+  const msg    = document.getElementById('tileDownloadMsg');
+  const sub    = document.getElementById('tileDownloadSub');
+  const spin   = document.getElementById('tileDownloadSpinner');
+  okBtn.disabled = canBtn.disabled = true;
+  spin.style.display = 'inline-block';
+  msg.textContent = 'Lade Routing-Daten…';
+  sub.textContent = 'Bitte warten, das kann 1–2 Minuten dauern.';
+  const segment = okBtn.dataset.segment;
+  try {
+    // Starte Download (Server-Hintergrundthread)
+    await fetch('/api/download-segment', {
+      method: 'POST', headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({segment})
+    });
+    // Pollen bis fertig
+    for (let i = 0; i < 80; i++) {
+      await new Promise(r => setTimeout(r, 3000));
+      const sr = await fetch(`/api/segment-status/${segment}`).then(r => r.json()).catch(() => ({}));
+      if (sr.status === 'ready') {
+        msg.textContent = '✓ Kachel heruntergeladen!';
+        sub.textContent = 'BRouter wurde neu gestartet. Routing wird wiederholt…';
+        await new Promise(r => setTimeout(r, 1500));
+        document.getElementById('tileDownloadToast').classList.remove('visible');
+        if (_tileDownloadResolve) { _tileDownloadResolve(true); _tileDownloadResolve = null; }
+        return;
+      }
+      if (sr.status?.startsWith('error')) throw new Error(sr.status);
+    }
+    throw new Error('Timeout');
+  } catch(e) {
+    msg.textContent = '✗ Download fehlgeschlagen';
+    sub.textContent = e.message;
+    okBtn.disabled = canBtn.disabled = false;
+    spin.style.display = 'none';
+    okBtn.textContent = '↺ Nochmal';
+  }
+}
+
+async function offerTileDownload(segment, lat, lon) {
+  return new Promise(resolve => {
+    _tileDownloadResolve = resolve;
+    const okBtn = document.getElementById('tileDownloadOkBtn');
+    const msg   = document.getElementById('tileDownloadMsg');
+    const sub   = document.getElementById('tileDownloadSub');
+    okBtn.dataset.segment = segment;
+    okBtn.disabled = false;
+    okBtn.textContent = '⬇ Herunterladen (~100 MB)';
+    document.getElementById('tileDownloadCancelBtn').disabled = false;
+    document.getElementById('tileDownloadSpinner').style.display = 'none';
+    msg.textContent = 'Routing-Daten fehlen';
+    sub.textContent = `Kachel ${segment} (Region um ${lat.toFixed(1)}°N, ${lon.toFixed(1)}°E) ist nicht installiert.`;
+    document.getElementById('tileDownloadToast').classList.add('visible');
+  });
+}
+
+async function brouterRoute(waypoints, _retry = false) {
   const lonlats = waypoints.map(([lat, lon]) => `${lon},${lat}`).join('|');
   const url = `/api/brouter?lonlats=${encodeURIComponent(lonlats)}&profile=${currentProfile}&alternativeidx=0&format=geojson`;
   const r = await fetch(url, { signal: AbortSignal.timeout(30000) });
@@ -1526,7 +1632,22 @@ async function brouterRoute(waypoints) {
     throw new Error(`BRouter ${r.status}: ${txt.slice(0, 200)}`);
   }
   const gj = await r.json();
-  if (gj.error) throw new Error(gj.error);
+  if (gj.error) {
+    // Prüfen ob fehlende Kachel der Grund sein könnte — nur beim ersten Versuch
+    if (!_retry && /no.*(route|data|segment)|routing.*missing|waypoint.*data/i.test(gj.error)) {
+      const [lat, lon] = waypoints[0];
+      const segment = latlonToSegment(lat, lon);
+      // Server fragen ob die Kachel fehlt
+      try {
+        const check = await fetch(`/api/segment-status/${segment}`).then(r => r.json());
+        if (check.status !== 'ready') {
+          const ok = await offerTileDownload(segment, lat, lon);
+          if (ok) return brouterRoute(waypoints, true); // Routing wiederholen
+        }
+      } catch {}
+    }
+    throw new Error(gj.error);
+  }
   const coords = gj.features[0].geometry.coordinates;
   const pts  = coords.map(([lon, lat])       => [lat, lon]);
   const eles = coords.every(c => c.length >= 3 && !isNaN(c[2]))
@@ -2379,15 +2500,21 @@ function captureTourState(name) {
   const campsites = {};
   stages.forEach((st, si) => { if (st.campsites?.length) campsites[si] = st.campsites; });
 
+  // Kompakte Vorschau-Punkte für Tourliste (max 80 Punkte)
+  const previewStep = Math.max(1, Math.floor(ROUTE_PTS.length / 80));
+  const route_preview = ROUTE_PTS.filter((_, idx) => idx % previewStep === 0);
+
   return {
     name,
     route_name:       ROUTE_NAME,
     route_sampled:    ROUTE_PTS,
     route_elevations: ROUTE_ELEVATIONS,
+    route_preview,
     total_km:         TOTAL_KM,
     num_stages:       NUM_STAGES,
     stage_names:      STAGE_ENDS.map(ep => ep.name),
     stage_adjustments:stages.map(s => s.adjustKm),
+    stage_notes:      stages.map(s => s.note || ''),
     targets,
     campsites,
     manual_camps:     manualCamps,
@@ -2404,6 +2531,35 @@ async function showTourManager() {
 }
 function hideTourManager() {
   document.getElementById('tourManagerModal').classList.remove('open');
+}
+
+/** Kleines SVG-Vorschaubild einer Route (für Tourliste) */
+function routePreviewSVG(pts, w = 90, h = 48) {
+  if (!pts || pts.length < 2) return '<div style="font-size:9px;color:var(--muted);text-align:center;width:100%">keine<br>Vorschau</div>';
+  const lats = pts.map(p => p[0]), lons = pts.map(p => p[1]);
+  const minLat = Math.min(...lats), maxLat = Math.max(...lats);
+  const minLon = Math.min(...lons), maxLon = Math.max(...lons);
+  const latR = maxLat - minLat || 0.01, lonR = maxLon - minLon || 0.01;
+  const pad = 4;
+  // Seitenverhältnis wahren
+  const scaleX = (w - 2 * pad) / lonR;
+  const scaleY = (h - 2 * pad) / latR;
+  const scale  = Math.min(scaleX, scaleY);
+  const offX   = pad + ((w - 2 * pad) - lonR * scale) / 2;
+  const offY   = pad + ((h - 2 * pad) - latR * scale) / 2;
+  const coords = pts.map(([lat, lon]) => [
+    (offX + (lon - minLon) * scale).toFixed(1),
+    (offY + (maxLat - lat) * scale).toFixed(1)
+  ]);
+  const polyPts = coords.map(([x, y]) => `${x},${y}`).join(' ');
+  // Start- und Endpunkt markieren
+  const [sx, sy] = coords[0];
+  const [ex, ey] = coords[coords.length - 1];
+  return `<svg width="${w}" height="${h}" xmlns="http://www.w3.org/2000/svg">
+    <polyline points="${polyPts}" fill="none" stroke="#3d8eff" stroke-width="1.5" stroke-linejoin="round" stroke-linecap="round" opacity=".9"/>
+    <circle cx="${sx}" cy="${sy}" r="2.5" fill="#4ade80"/>
+    <circle cx="${ex}" cy="${ey}" r="2.5" fill="#f87171"/>
+  </svg>`;
 }
 
 /** Tourenliste vom Server laden und anzeigen */
@@ -2429,7 +2585,9 @@ async function listTours() {
       ].filter(Boolean).join(' · ');
       const div = document.createElement('div');
       div.className = 'tour-item';
+      div.style.cssText += 'align-items:center';
       div.innerHTML = `
+        <div class="tour-preview">${routePreviewSVG(t.route_preview)}</div>
         <div class="tour-item-info">
           <div class="tour-item-name" title="${t.name}">${t.name}</div>
           <div class="tour-item-meta">${meta}</div>
@@ -2503,9 +2661,10 @@ async function restoreTourState(data) {
   if (!TOTAL_KM && routeCumDist.length) TOTAL_KM = routeCumDist[routeCumDist.length - 1];
   BASE_KM_INT = Math.round(TOTAL_KM / NUM_STAGES) || 1;
 
-  // 2. Etappen neu aufbauen + adjustKm wiederherstellen
+  // 2. Etappen neu aufbauen + adjustKm + Notizen wiederherstellen
   rebuildStages();
   (data.stage_adjustments || []).forEach((adj, i) => { if (stages[i]) stages[i].adjustKm = adj; });
+  (data.stage_notes      || []).forEach((note, i) => { if (stages[i]) stages[i].note = note || ''; });
 
   // 3. STAGE_ENDS (Namen aus Tour-Daten, Koordinaten aus Route)
   computeStageEnds(data.stage_names?.length === NUM_STAGES ? data.stage_names : null);

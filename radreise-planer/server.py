@@ -12,9 +12,11 @@ Radreise Planer – HTTP-Server für Docker / Home Assistant Add-on.
 import http.server
 import json
 import os
+import re as _re
 import socketserver
 import subprocess
 import sys
+import threading
 import urllib.request
 import urllib.parse
 import datetime
@@ -39,6 +41,39 @@ BROUTER_PORT = 17777
 APP_DIR      = os.path.dirname(os.path.abspath(__file__))
 
 brouter_proc = None
+
+# ── On-demand Kachel-Download ─────────────────────────────────────────────────
+_segment_status = {}   # segment -> 'downloading' | 'ready' | 'error: ...'
+_download_lock  = threading.Lock()
+
+def _segment_name_ok(seg):
+    return bool(_re.match(r'^[EW]\d+_[NS]\d+$', seg))
+
+def _download_segment_bg(segment):
+    global brouter_proc, _segment_status
+    seg_file = os.path.join(SEGMENTS_DIR, f'{segment}.rd5')
+    tmp      = seg_file + '.tmp'
+    try:
+        url = f'https://brouter.de/brouter/segments4/{segment}.rd5'
+        print(f'  Lade Segment {segment} …', flush=True)
+        urllib.request.urlretrieve(url, tmp)
+        os.rename(tmp, seg_file)
+        print(f'  ✓ {segment}.rd5 heruntergeladen ({os.path.getsize(seg_file)//1024//1024} MB)', flush=True)
+        # BRouter neu starten damit er das neue Segment lädt
+        if brouter_proc:
+            brouter_proc.terminate()
+            try: brouter_proc.wait(timeout=10)
+            except Exception: pass
+        start_brouter()
+        import time; time.sleep(5)   # BRouter braucht ein paar Sekunden zum Starten
+        _segment_status[segment] = 'ready'
+        print(f'  ✓ BRouter neu gestartet mit {segment}', flush=True)
+    except Exception as e:
+        if os.path.exists(tmp):
+            try: os.remove(tmp)
+            except Exception: pass
+        _segment_status[segment] = f'error: {e}'
+        print(f'  ✗ Segment {segment} Fehler: {e}', flush=True)
 
 # ── BRouter ───────────────────────────────────────────────────────────────────
 def start_brouter():
@@ -97,13 +132,14 @@ def list_tours():
         d = _load_json(os.path.join(TOURS_DIR, fname))
         if d:
             tours.append({
-                'id':         d.get('id', fname[:-5]),
-                'name':       d.get('name', 'Unbekannt'),
-                'route_name': d.get('route_name', ''),
-                'created':    d.get('created', ''),
-                'modified':   d.get('modified', ''),
-                'total_km':   d.get('total_km', 0),
-                'num_stages': d.get('num_stages', 0),
+                'id':            d.get('id', fname[:-5]),
+                'name':          d.get('name', 'Unbekannt'),
+                'route_name':    d.get('route_name', ''),
+                'created':       d.get('created', ''),
+                'modified':      d.get('modified', ''),
+                'total_km':      d.get('total_km', 0),
+                'num_stages':    d.get('num_stages', 0),
+                'route_preview': d.get('route_preview', []),
             })
     return sorted(tours, key=lambda t: t.get('modified') or t.get('created', ''), reverse=True)
 
@@ -167,6 +203,17 @@ class Handler(http.server.SimpleHTTPRequestHandler):
         elif p == '/api/segments-refreshed':
             d = _load_json(SEGMENTS_REFRESHED_FILE)
             self._json(200, d if d else None)
+        elif p.startswith('/api/segment-status/'):
+            seg = p[len('/api/segment-status/'):]
+            if not _segment_name_ok(seg):
+                self._json(400, {'error': 'Ungültiger Segment-Name'})
+            else:
+                seg_file = os.path.join(SEGMENTS_DIR, f'{seg}.rd5')
+                if os.path.exists(seg_file) and _segment_status.get(seg) != 'downloading':
+                    self._json(200, {'status': 'ready', 'segment': seg})
+                else:
+                    status = _segment_status.get(seg, 'unknown')
+                    self._json(200, {'status': status, 'segment': seg})
         elif p.startswith('/api/brouter'):
             self._proxy_brouter()
         elif p.startswith('/api/overpass'):
@@ -221,6 +268,22 @@ class Handler(http.server.SimpleHTTPRequestHandler):
         elif p == '/api/route-data':
             _save_json(ROUTE_DATA_FILE, json.loads(body))
             self._json(200, {'ok': True})
+        elif p == '/api/download-segment':
+            body_data = json.loads(body)
+            seg = body_data.get('segment', '')
+            if not _segment_name_ok(seg):
+                self._json(400, {'error': 'Ungültiger Segment-Name'})
+            else:
+                seg_file = os.path.join(SEGMENTS_DIR, f'{seg}.rd5')
+                if os.path.exists(seg_file):
+                    self._json(200, {'status': 'ready', 'segment': seg})
+                elif _segment_status.get(seg) == 'downloading':
+                    self._json(200, {'status': 'downloading', 'segment': seg})
+                else:
+                    _segment_status[seg] = 'downloading'
+                    t = threading.Thread(target=_download_segment_bg, args=(seg,), daemon=True)
+                    t.start()
+                    self._json(200, {'status': 'downloading', 'segment': seg})
         elif p == '/api/tours':
             try:    self._json(200, {'ok': True, 'id': save_tour(json.loads(body))})
             except Exception as e: self._json(500, {'error': str(e)})
