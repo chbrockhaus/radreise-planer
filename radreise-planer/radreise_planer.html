@@ -114,8 +114,9 @@ header{background:var(--surface);border-bottom:1px solid var(--border);padding:9
 /* ── Tour-Minimap ── */
 .tour-preview{flex-shrink:0;width:90px;height:48px;border-radius:4px;background:var(--surface2,#1e2236);border:1px solid var(--border);overflow:hidden;display:flex;align-items:center;justify-content:center}
 /* ── Höhenprofil ── */
-/* Leaflet-Steuerung nach oben verschieben wenn Profil aktiv */
+/* Leaflet-Steuerung + Karten-Legende nach oben verschieben wenn Profil aktiv */
 #mapWrap.ep-active .leaflet-bottom{bottom:96px!important}
+#mapWrap.ep-active .map-legend{bottom:108px!important;max-height:calc(100vh - 220px)}
 #elevProfile{position:absolute;bottom:0;left:0;right:0;z-index:800;background:rgba(12,16,26,.9);border-top:1px solid rgba(255,255,255,.1);display:none;flex-direction:column;backdrop-filter:blur(3px)}
 #elevProfile.ep-visible{display:flex}
 .ep-header{display:flex;align-items:center;gap:8px;padding:3px 10px;font-size:10px;color:var(--muted);flex-shrink:0;height:22px;box-sizing:border-box}
@@ -1569,14 +1570,26 @@ function renderElevProfile() {
   }
 }
 
+function _epSmooth(eles, w = 7) {
+  // Gleitender Durchschnitt um GPS-Rauschen zu eliminieren
+  const h = Math.floor(w / 2), out = [];
+  for (let i = 0; i < eles.length; i++) {
+    let s = 0, n = 0;
+    for (let j = Math.max(0, i-h); j <= Math.min(eles.length-1, i+h); j++) { s += eles[j]; n++; }
+    out.push(s / n);
+  }
+  return out;
+}
 function _epUphill(eles) {
+  const s = _epSmooth(eles);
   let u = 0;
-  for (let i = 1; i < eles.length; i++) { const d = eles[i]-eles[i-1]; if (d>0) u+=d; }
+  for (let i = 1; i < s.length; i++) { const d = s[i]-s[i-1]; if (d > 2) u += d; }
   return Math.round(u);
 }
 function _epDownhill(eles) {
+  const s = _epSmooth(eles);
   let d = 0;
-  for (let i = 1; i < eles.length; i++) { const dd = eles[i-1]-eles[i]; if (dd>0) d+=dd; }
+  for (let i = 1; i < s.length; i++) { const dd = s[i-1]-s[i]; if (dd > 2) d += dd; }
   return Math.round(d);
 }
 
