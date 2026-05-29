@@ -1,26 +1,22 @@
 FROM python:3.12-alpine
 
-# Build-Argumente (von HA Supervisor übergeben, werden ignoriert wenn nicht gesetzt)
+# Build-Argumente (von HA Supervisor übergeben)
 ARG BUILD_VERSION=dev
 ARG BUILD_ARCH=amd64
 
-# Java 21 + Tools
-# openjdk21-jre-headless ist in Alpine edge verfügbar
+# Basis-Tools (curl statt wget – wget kann GitHub-HTTPS-Redirects nicht folgen)
 RUN apk add --no-cache \
-    openjdk21-jre-headless \
-    wget \
-    unzip \
-    ca-certificates \
- || apk add --no-cache \
-    openjdk17-jre-headless \
-    wget \
+    curl \
     unzip \
     ca-certificates
 
-# BRouter herunterladen
-# Fallback auf brouter.jar direkt falls Zip-Struktur abweicht
+# Java 21 mit Fallback auf Java 17
+RUN apk add --no-cache openjdk21-jre-headless \
+ || apk add --no-cache openjdk17-jre-headless
+
+# BRouter herunterladen und installieren
 RUN mkdir -p /opt/brouter/profiles2 /opt/brouter/customprofiles && \
-    wget -q --tries=3 -O /tmp/brouter.zip \
+    curl -fsSL --retry 3 -o /tmp/brouter.zip \
         "https://github.com/abrensch/brouter/releases/download/1.7.0/brouter_1.7.0.zip" && \
     unzip -q /tmp/brouter.zip -d /tmp/brtemp && \
     find /tmp/brtemp -name "brouter.jar" | head -1 | xargs -I{} cp {} /opt/brouter/ && \

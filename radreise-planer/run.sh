@@ -44,7 +44,7 @@ for seg in ${SEGMENTS}; do
     FILE="${SEGMENTS_DIR}/${seg}.rd5"
     if [ ! -f "${FILE}" ]; then
         echo "  Lade Routing-Daten: ${seg}.rd5 (~100 MB) ..."
-        if wget -q -O "${FILE}.tmp" "${SEGMENT_BASE}/${seg}.rd5"; then
+        if curl -fsSL --retry 3 -o "${FILE}.tmp" "${SEGMENT_BASE}/${seg}.rd5"; then
             mv "${FILE}.tmp" "${FILE}"
             echo "  ✓ ${seg}.rd5 heruntergeladen"
         else
