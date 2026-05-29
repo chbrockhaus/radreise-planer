@@ -118,6 +118,8 @@ header{background:var(--surface);border-bottom:1px solid var(--border);padding:9
 /* ── Tour-Minimap ── */
 .tour-preview{flex-shrink:0;width:90px;height:48px;border-radius:4px;background:var(--surface2,#1e2236);border:1px solid var(--border);overflow:hidden;display:flex;align-items:center;justify-content:center}
 /* ── Höhenprofil ── */
+/* Leaflet-Steuerung nach oben verschieben wenn Profil aktiv */
+#mapWrap.ep-active .leaflet-bottom{bottom:96px!important}
 #elevProfile{position:absolute;bottom:0;left:0;right:0;z-index:800;background:rgba(12,16,26,.9);border-top:1px solid rgba(255,255,255,.1);display:none;flex-direction:column;backdrop-filter:blur(3px)}
 #elevProfile.ep-visible{display:flex}
 .ep-header{display:flex;align-items:center;gap:8px;padding:3px 10px;font-size:10px;color:var(--muted);flex-shrink:0;height:22px;box-sizing:border-box}
@@ -1433,10 +1435,7 @@ function toggleElevProfile() {
   const btn = document.getElementById('elevProfileBtn');
   if (btn) btn.style.color = _epVisible ? 'var(--accent)' : '';
   // Leaflet-Steuerung (Maßstab etc.) nach oben verschieben damit sie nicht überlappt
-  const epH = 22 + 74; // Header + SVG
-  document.querySelectorAll('.leaflet-bottom').forEach(el => {
-    el.style.bottom = _epVisible ? epH + 'px' : '';
-  });
+  document.getElementById('mapWrap').classList.toggle('ep-active', _epVisible);
   if (_epVisible) {
     _buildEpLegend();
     renderElevProfile();
