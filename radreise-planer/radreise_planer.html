@@ -97,6 +97,8 @@ header{background:var(--surface);border-bottom:1px solid var(--border);padding:9
 .co-osm-link a{color:#555}
 .co-osm-link a:hover{color:#888}
 .camp-osm-hint{position:absolute;left:50%;transform:translateX(-50%);bottom:42px;background:rgba(24,28,36,.88);border:1px solid var(--border);border-radius:4px;padding:4px 10px;font-size:10px;color:var(--muted);z-index:1000;pointer-events:none;white-space:nowrap}
+#overpassHint{position:fixed;bottom:52px;left:50%;transform:translateX(-50%);background:rgba(18,22,32,.93);border:1px solid var(--accent,#3d8eff);border-radius:20px;padding:5px 14px 5px 10px;font-size:11px;color:var(--accent,#3d8eff);z-index:9500;display:none;align-items:center;gap:7px;white-space:nowrap;box-shadow:0 2px 10px rgba(0,0,0,.4);pointer-events:none}
+#overpassHint.visible{display:flex}
 .camp{cursor:pointer}
 .camp-active{background:rgba(61,142,255,.14)!important;border-left:3px solid var(--accent);padding-left:5px}
 .ws-row{display:flex;align-items:center;gap:4px;margin-top:3px;flex-wrap:wrap}
@@ -273,6 +275,7 @@ header{background:var(--surface);border-bottom:1px solid var(--border);padding:9
       <button class="map-btn" id="campOsmBtn" onclick="toggleCampOsmLayer()" title="Campingplätze aus OSM einblenden" style="font-size:14px">⛺</button>
     </div>
     <div id="campOsmHint" class="camp-osm-hint" style="display:none"></div>
+    <div id="overpassHint"></div>
     <!-- Route-Edit Toolbar -->
     <div id="routeEditBar" style="display:none;position:absolute;top:12px;left:52px;z-index:1001;background:rgba(24,28,36,.94);border:1px solid var(--border);border-radius:6px;padding:6px 10px;align-items:center;gap:8px;white-space:nowrap">
       <span style="font-size:10px;color:var(--muted)">Klick auf Karte → Wegpunkt</span>
@@ -1314,7 +1317,22 @@ const OVERPASS_ENDPOINTS=[
 ];
 const OVERPASS_TIMEOUT = 35000; // ms pro Versuch
 
+let _overpassActive = 0;
+function _overpassHintShow(msg) {
+  const el = document.getElementById('overpassHint');
+  if (!el) return;
+  el.innerHTML = `<span class="spin" style="width:11px;height:11px;border-width:2px"></span>${msg}`;
+  el.classList.add('visible');
+}
+function _overpassHintHide() {
+  if (_overpassActive > 0) return; // andere Anfrage noch aktiv
+  const el = document.getElementById('overpassHint');
+  if (el) el.classList.remove('visible');
+}
+
 async function overpassFetch(q){
+  _overpassActive++;
+  _overpassHintShow('OSM-Anfrage läuft…');
   const param='?data='+encodeURIComponent(q);
   const lastErr = {};
 
@@ -1323,28 +1341,31 @@ async function overpassFetch(q){
     for(let attempt=0; attempt<2; attempt++){
       try{
         const r=await fetch(ep+param,{signal:AbortSignal.timeout(OVERPASS_TIMEOUT)});
-        if(r.ok) return await r.json();
+        if(r.ok){ _overpassActive--; _overpassHintHide(); return await r.json(); }
         if(r.status===429){
-          // Rate-Limit: kurz warten, dann nächsten Endpoint
+          _overpassHintShow('Overpass Rate-Limit – warte…');
           await new Promise(res=>setTimeout(res,2500));
+          _overpassHintShow('OSM-Anfrage läuft…');
           lastErr[ep]='429'; break;
         }
         if(r.status>=500){ lastErr[ep]=r.status; break; } // Server-Fehler → nächster
         lastErr[ep]=r.status; break;
       }catch(e){
         lastErr[ep]=e.name;
-        if(attempt===0) await new Promise(res=>setTimeout(res,1200)); // kurz warten, dann Retry
+        if(attempt===0){ _overpassHintShow('Overpass – Retry…'); await new Promise(res=>setTimeout(res,1200)); _overpassHintShow('OSM-Anfrage läuft…'); }
       }
     }
   }
 
   // 2) CORS-Proxy als letzter Ausweg (für restriktive Netzwerke)
   try{
+    _overpassHintShow('Overpass – CORS-Proxy…');
     const r=await fetch('https://corsproxy.io/?'+encodeURIComponent(OVERPASS_ENDPOINTS[0]+param),{signal:AbortSignal.timeout(OVERPASS_TIMEOUT)});
-    if(r.ok) return await r.json();
+    if(r.ok){ _overpassActive--; _overpassHintHide(); return await r.json(); }
   }catch{}
 
-  // Hilfreiche Fehlermeldung
+  // Fehlgeschlagen
+  _overpassActive--; _overpassHintHide();
   if(location.protocol==='file:')
     throw new Error('Datei als file:// geöffnet – bitte über lokalem Server öffnen:\npython -m http.server 3000\n→ http://localhost:3000/radreise_planer.html');
   const codes=Object.values(lastErr).join(', ');
