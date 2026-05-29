@@ -183,6 +183,8 @@ header{background:var(--surface);border-bottom:1px solid var(--border);padding:9
 .tour-load-btn:hover{opacity:.85}
 .tour-del-btn{background:transparent;color:var(--red);border:1px solid var(--red);border-radius:4px;padding:4px 8px;cursor:pointer;font-size:11px;font-family:'DM Sans',sans-serif;transition:all .15s}
 .tour-del-btn:hover{background:var(--red);color:#fff}
+.tour-exp-btn{background:transparent;color:var(--muted);border:1px solid var(--border);border-radius:4px;padding:4px 8px;cursor:pointer;font-size:11px;font-family:'DM Sans',sans-serif;transition:all .15s}
+.tour-exp-btn:hover{color:var(--fg);border-color:var(--fg)}
 /* ── Reroute Panel ── */
 #reroutePanel{display:none;background:var(--surface2);border-bottom:1px solid var(--border);padding:10px 15px;flex-shrink:0}
 #reroutePanel.open{display:block}
@@ -338,7 +340,22 @@ header{background:var(--surface);border-bottom:1px solid var(--border);padding:9
       <div style="font-size:11px;color:var(--muted);font-style:italic">Wird geladen…</div>
     </div>
 
-    <div style="margin-top:14px">
+    <!-- Import / Export -->
+    <div style="margin-top:12px;padding-top:10px;border-top:1px solid var(--border);display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+      <button onclick="exportAllTours()"
+        style="background:var(--surface2);color:var(--fg);border:1px solid var(--border);border-radius:4px;padding:5px 11px;cursor:pointer;font-size:11px;font-family:'DM Sans',sans-serif">
+        ⬇ Alle exportieren
+      </button>
+      <button onclick="document.getElementById('importTourInput').click()"
+        style="background:var(--surface2);color:var(--fg);border:1px solid var(--border);border-radius:4px;padding:5px 11px;cursor:pointer;font-size:11px;font-family:'DM Sans',sans-serif">
+        ⬆ Importieren
+      </button>
+      <input id="importTourInput" type="file" accept=".json" multiple style="display:none"
+        onchange="handleImportFiles(this.files);this.value=''">
+      <span id="importTourStatus" style="font-size:10px;color:var(--muted)"></span>
+    </div>
+
+    <div style="margin-top:10px">
       <button class="modal-btn-cancel" style="width:100%" onclick="hideTourManager()">Schließen</button>
     </div>
   </div>
@@ -2264,6 +2281,7 @@ async function listTours() {
         </div>
         <div class="tour-item-btns">
           <button class="tour-load-btn" onclick="loadTour('${t.id}')">📂 Laden</button>
+          <button class="tour-exp-btn"  onclick="exportTour('${t.id}','${t.name.replace(/'/g,'').replace(/"/g,'')}')">⬇</button>
           <button class="tour-del-btn"  onclick="deleteTour('${t.id}',this)">🗑</button>
         </div>`;
       el.appendChild(div);
@@ -2405,6 +2423,64 @@ async function deleteTour(id, btnEl) {
   } catch {
     alert('Löschen fehlgeschlagen');
   }
+}
+
+/** Tour als JSON-Datei herunterladen */
+async function exportTour(id, name) {
+  try {
+    const r = await fetch(`/api/tours/${id}`);
+    if (!r.ok) throw new Error('HTTP ' + r.status);
+    const data = await r.json();
+    const safe = (name || id).replace(/[^\w\säöüÄÖÜß\-]/g, '_').trim() || id;
+    const blob = new Blob([JSON.stringify(data, null, 2)], {type: 'application/json'});
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = safe + '.json';
+    document.body.appendChild(a); a.click();
+    setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 1000);
+  } catch(e) { alert('Export fehlgeschlagen: ' + e.message); }
+}
+
+/** Alle Touren nacheinander als JSON exportieren */
+async function exportAllTours() {
+  try {
+    const r = await fetch('/api/tours');
+    if (!r.ok) throw new Error('HTTP ' + r.status);
+    const tours = await r.json();
+    if (!tours.length) { alert('Keine Touren vorhanden'); return; }
+    for (let i = 0; i < tours.length; i++) {
+      if (i > 0) await new Promise(res => setTimeout(res, 400));
+      await exportTour(tours[i].id, tours[i].name);
+    }
+  } catch(e) { alert('Export fehlgeschlagen: ' + e.message); }
+}
+
+/** Mehrere JSON-Dateien importieren und auf dem Server speichern */
+async function handleImportFiles(files) {
+  const statusEl = document.getElementById('importTourStatus');
+  statusEl.style.color = 'var(--muted)'; statusEl.textContent = '⏳ Importiere…';
+  let ok = 0, fail = 0;
+  for (const file of Array.from(files)) {
+    try {
+      const text = await file.text();
+      const data = JSON.parse(text);
+      if (!data.name) throw new Error('Kein Tour-Name');
+      // ID beibehalten – ermöglicht konsistentes Laden auf neuem Server
+      const r = await fetch('/api/tours', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify(data)
+      });
+      if (!r.ok) throw new Error('HTTP ' + r.status);
+      ok++;
+    } catch(e) {
+      fail++;
+      console.warn('Import-Fehler', file.name, e.message);
+    }
+  }
+  statusEl.style.color = fail && !ok ? 'var(--red)' : 'var(--green)';
+  statusEl.textContent = ok + ' importiert' + (fail ? ', ' + fail + ' Fehler' : '');
+  await listTours();
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
