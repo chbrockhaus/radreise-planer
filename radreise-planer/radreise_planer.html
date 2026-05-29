@@ -115,6 +115,20 @@ header{background:var(--surface);border-bottom:1px solid var(--border);padding:9
 .stage-note-ta:focus{outline:none;border-color:var(--accent)}
 /* ── Tour-Minimap ── */
 .tour-preview{flex-shrink:0;width:90px;height:48px;border-radius:4px;background:var(--surface2,#1e2236);border:1px solid var(--border);overflow:hidden;display:flex;align-items:center;justify-content:center}
+/* ── Höhenprofil ── */
+#elevProfile{position:absolute;bottom:0;left:0;right:0;z-index:800;background:rgba(12,16,26,.9);border-top:1px solid rgba(255,255,255,.1);display:none;flex-direction:column;backdrop-filter:blur(3px)}
+#elevProfile.ep-visible{display:flex}
+.ep-header{display:flex;align-items:center;gap:8px;padding:3px 10px;font-size:10px;color:var(--muted);flex-shrink:0;height:22px;box-sizing:border-box}
+.ep-title{font-weight:700;color:var(--text);font-size:11px;white-space:nowrap}
+.ep-range{font-size:10px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.ep-legend{display:flex;align-items:center;gap:1px;margin-left:auto;border-radius:3px;overflow:hidden;flex-shrink:0}
+.ep-legend span{display:inline-block;width:10px;height:8px}
+.ep-close{background:none;border:none;color:var(--muted);cursor:pointer;font-size:12px;padding:0 2px;line-height:1;margin-left:4px;flex-shrink:0}
+.ep-close:hover{color:var(--text)}
+.ep-svg-wrap{position:relative;width:100%;height:74px;overflow:hidden;cursor:crosshair;flex-shrink:0}
+.ep-svg-wrap svg{position:absolute;top:0;left:0;display:block}
+.ep-cursor{position:absolute;top:0;bottom:16px;width:1px;background:rgba(255,255,255,.5);pointer-events:none;display:none}
+.ep-tooltip{position:absolute;top:2px;background:rgba(12,16,26,.96);border:1px solid var(--border);border-radius:4px;padding:3px 7px;font-size:10px;color:var(--text);pointer-events:none;display:none;white-space:nowrap;transform:translateX(-50%);z-index:2}
 /* ── Kachel-Download Toast ── */
 #tileDownloadToast{position:fixed;bottom:80px;left:50%;transform:translateX(-50%);background:rgba(18,22,32,.97);border:1px solid var(--accent,#3d8eff);border-radius:10px;padding:12px 18px;font-size:12px;color:var(--fg);z-index:9700;display:none;flex-direction:column;gap:8px;min-width:280px;box-shadow:0 4px 20px rgba(0,0,0,.5)}
 #tileDownloadToast.visible{display:flex}
@@ -299,6 +313,20 @@ header{background:var(--surface);border-bottom:1px solid var(--border);padding:9
       <button class="map-btn" id="routeEditBtn" onclick="toggleRouteEditMode()" title="Route bearbeiten: Klick auf Linie → Wegpunkt setzen" style="font-size:15px">⤴</button>
       <button class="map-btn" id="layerBtn" onclick="switchTileLayer()" title="Karte wechseln" style="font-size:11px;font-weight:700">🗺</button>
       <button class="map-btn" id="campOsmBtn" onclick="toggleCampOsmLayer()" title="Campingplätze aus OSM einblenden" style="font-size:14px">⛺</button>
+      <button class="map-btn" id="elevProfileBtn" onclick="toggleElevProfile()" title="Höhenprofil ein-/ausblenden" style="font-size:13px">⛰</button>
+    </div>
+    <!-- Höhenprofil -->
+    <div id="elevProfile">
+      <div class="ep-header">
+        <span class="ep-title">⛰ Höhenprofil</span>
+        <span class="ep-range" id="epRange"></span>
+        <div class="ep-legend" id="epLegend"></div>
+        <button class="ep-close" onclick="toggleElevProfile()" title="Schließen">✕</button>
+      </div>
+      <div class="ep-svg-wrap" id="epSvgWrap" onmousemove="_epMouseMove(event)" onmouseleave="_epMouseLeave()">
+        <div class="ep-cursor" id="epCursor"></div>
+        <div class="ep-tooltip" id="epTooltip"></div>
+      </div>
     </div>
     <div id="campOsmHint" class="camp-osm-hint" style="display:none"></div>
     <div id="overpassHint"></div>
@@ -620,7 +648,10 @@ function initMap() {
 
   // Campingplatz-Overlay-Layer (ganz oben)
   _campOsmLayerGroup = L.layerGroup().addTo(leafletMap);
-  leafletMap.on('moveend zoomend', () => { if (_campOsmEnabled) _scheduleCampOsm(); });
+  leafletMap.on('moveend zoomend', () => {
+    if (_campOsmEnabled) _scheduleCampOsm();
+    if (_epVisible) _scheduleElevProfile();
+  });
 
   buildMainRouteLayer();
   if (ROUTE_PTS.length)
@@ -1369,6 +1400,238 @@ const OVERPASS_ENDPOINTS=[
   'https://overpass.private.coffee/api/interpreter'
 ];
 const OVERPASS_TIMEOUT = 30000; // ms pro Versuch (30s – Server-Query-Timeout ist 25-30s)
+
+// ── Höhenprofil ──────────────────────────────────────────────────────────────
+const EP_SLOPE_SCALE = [
+  { min:  12, color: '#b91c1c', label: '>12%'     },
+  { min:   8, color: '#ef4444', label: '8–12%'    },
+  { min:   5, color: '#f97316', label: '5–8%'     },
+  { min:   3, color: '#eab308', label: '3–5%'     },
+  { min:   1, color: '#84cc16', label: '1–3%'     },
+  { min:  -1, color: '#6b7280', label: '±1% flach'},
+  { min:  -3, color: '#67e8f9', label: '1–3%'     },
+  { min:  -5, color: '#38bdf8', label: '3–5%'     },
+  { min:  -8, color: '#3b82f6', label: '5–8%'     },
+  { min: -12, color: '#2563eb', label: '8–12%'    },
+  { min: -999,color: '#1d4ed8', label: '>12%'     },
+];
+function slopeColor(pct) {
+  for (const { min, color } of EP_SLOPE_SCALE) if (pct >= min) return color;
+  return '#1d4ed8';
+}
+
+let _epVisible = false;
+let _epState   = null;
+let _epCrosshairMarker = null;
+let _epTimeout = null;
+
+function toggleElevProfile() {
+  _epVisible = !_epVisible;
+  document.getElementById('elevProfile').classList.toggle('ep-visible', _epVisible);
+  const btn = document.getElementById('elevProfileBtn');
+  if (btn) btn.style.color = _epVisible ? 'var(--accent)' : '';
+  if (_epVisible) {
+    _buildEpLegend();
+    renderElevProfile();
+  } else {
+    if (_epCrosshairMarker) { _epCrosshairMarker.remove(); _epCrosshairMarker = null; }
+  }
+}
+
+function _buildEpLegend() {
+  const el = document.getElementById('epLegend');
+  if (!el || el.childElementCount) return;
+  // Von blau (steile Abfahrt) → grau → rot (steile Steigung)
+  const cols = [...EP_SLOPE_SCALE].reverse().map(s => s.color);
+  el.innerHTML = cols.map(c => `<span style="background:${c}" title="${EP_SLOPE_SCALE.find(s=>s.color===c)?.label||''}"></span>`).join('');
+  // Labels drunter
+  el.insertAdjacentHTML('afterend',
+    `<span style="font-size:9px;color:var(--muted);margin-left:4px">▼Abfahrt</span>
+     <span style="font-size:9px;color:var(--muted);margin-left:4px">Anstieg▲</span>`
+  );
+}
+
+function _scheduleElevProfile() {
+  clearTimeout(_epTimeout);
+  _epTimeout = setTimeout(renderElevProfile, 180);
+}
+
+function renderElevProfile() {
+  if (!_epVisible) return;
+  const wrap = document.getElementById('epSvgWrap');
+  if (!wrap || !leafletMap) return;
+
+  if (!ROUTE_PTS.length || !ROUTE_ELEVATIONS.length) {
+    const old = wrap.querySelector('svg');
+    if (old) old.remove();
+    if (!wrap.querySelector('.ep-no-data'))
+      wrap.insertAdjacentHTML('afterbegin',
+        '<div class="ep-no-data" style="font-size:10px;color:var(--muted);padding:22px 0;text-align:center;position:absolute;width:100%">Keine Höhendaten – GPX mit Höheninformation laden.</div>');
+    return;
+  }
+  wrap.querySelector('.ep-no-data')?.remove();
+
+  const W = wrap.clientWidth || 600;
+  const H = 74;
+  const PL = 32, PR = 6, PT = 6, PB = 16;
+  const IW = W - PL - PR, IH = H - PT - PB;
+
+  // Sichtbare Punkte ermitteln
+  const bounds = leafletMap.getBounds();
+  let si = -1, ei = -1;
+  for (let i = 0; i < ROUTE_PTS.length; i++) {
+    if (bounds.contains(ROUTE_PTS[i])) { if (si < 0) si = i; ei = i; }
+  }
+  if (si < 0) { si = 0; ei = ROUTE_PTS.length - 1; }
+  si = Math.max(0, si - 2);
+  ei = Math.min(ROUTE_PTS.length - 1, ei + 2);
+
+  // Subsample auf max. 400 Punkte
+  const total = ei - si + 1;
+  const step  = Math.max(1, Math.floor(total / 400));
+  const idxs  = [];
+  for (let i = si; i <= ei; i += step) idxs.push(i);
+  if (idxs[idxs.length - 1] !== ei) idxs.push(ei);
+
+  const eles = idxs.map(i => ROUTE_ELEVATIONS[i] || 0);
+  const pts  = idxs.map(i => ROUTE_PTS[i]);
+
+  // Steigungen (% = rise/run*100)
+  const slopes = [0];
+  for (let i = 1; i < pts.length; i++) {
+    const dh = eles[i] - eles[i-1];
+    const dd = hav(pts[i-1][0], pts[i-1][1], pts[i][0], pts[i][1]) * 1000; // m
+    slopes.push(dd > 2 ? (dh / dd) * 100 : 0);
+  }
+
+  // Kumulative Distanzen
+  const dists = [0];
+  for (let i = 1; i < pts.length; i++)
+    dists.push(dists[i-1] + hav(pts[i-1][0], pts[i-1][1], pts[i][0], pts[i][1]));
+  const totalDist = dists[dists.length - 1] || 1;
+
+  const minE = Math.min(...eles), maxE = Math.max(...eles);
+  const eRange = maxE - minE || 1;
+
+  const xs = dists.map(d => PL + (d / totalDist) * IW);
+  const ys = eles.map(e => PT + IH - ((e - minE) / eRange) * IH);
+
+  const startKm = routeCumDist.length ? routeCumDist[si] : 0;
+  _epState = { xs, ys, eles, slopes, dists, totalDist, idxs, pts, minE, maxE, PL, PT, PB, IW, IH, W, H, startKm };
+
+  // SVG aufbauen
+  let svg = `<svg width="${W}" height="${H}" xmlns="http://www.w3.org/2000/svg">`;
+
+  // Gitterlinien
+  for (let g = 0; g <= 4; g++) {
+    const gy = (PT + IH * (1 - g/4)).toFixed(1);
+    svg += `<line x1="${PL}" y1="${gy}" x2="${W-PR}" y2="${gy}" stroke="rgba(255,255,255,.05)" stroke-width="1"/>`;
+  }
+
+  // Gefärbte Segmente als Polygone
+  const base = (PT + IH).toFixed(1);
+  for (let i = 0; i < pts.length - 1; i++) {
+    const midSlope = (slopes[i] + slopes[i+1]) / 2;
+    const col = slopeColor(midSlope);
+    const x1 = xs[i].toFixed(1), x2 = xs[i+1].toFixed(1);
+    const y1 = ys[i].toFixed(1), y2 = ys[i+1].toFixed(1);
+    svg += `<polygon points="${x1},${y1} ${x2},${y2} ${x2},${base} ${x1},${base}" fill="${col}" opacity=".8"/>`;
+  }
+
+  // Profilkurve
+  const line = xs.map((x, i) => `${x.toFixed(1)},${ys[i].toFixed(1)}`).join(' ');
+  svg += `<polyline points="${line}" fill="none" stroke="rgba(255,255,255,.6)" stroke-width="1.1" stroke-linejoin="round"/>`;
+
+  // Y-Labels
+  svg += `<text x="${PL-3}" y="${PT+9}" fill="rgba(255,255,255,.5)" font-size="9" font-family="sans-serif" text-anchor="end">${Math.round(maxE)}m</text>`;
+  svg += `<text x="${PL-3}" y="${PT+IH}" fill="rgba(255,255,255,.5)" font-size="9" font-family="sans-serif" text-anchor="end">${Math.round(minE)}m</text>`;
+
+  // X-Labels: Start-km, Mitte, Ende
+  const fmtKm = k => k >= 1 ? k.toFixed(0)+'km' : (k*1000).toFixed(0)+'m';
+  svg += `<text x="${PL}" y="${H-2}" fill="rgba(255,255,255,.4)" font-size="9" font-family="sans-serif">${fmtKm(startKm)}</text>`;
+  svg += `<text x="${(PL+IW/2).toFixed(0)}" y="${H-2}" fill="rgba(255,255,255,.35)" font-size="9" font-family="sans-serif" text-anchor="middle">${fmtKm(startKm+totalDist/2)}</text>`;
+  svg += `<text x="${(W-PR).toFixed(0)}" y="${H-2}" fill="rgba(255,255,255,.4)" font-size="9" font-family="sans-serif" text-anchor="end">${fmtKm(startKm+totalDist)}</text>`;
+
+  svg += '</svg>';
+
+  const old = wrap.querySelector('svg');
+  if (old) old.remove();
+  wrap.insertAdjacentHTML('afterbegin', svg);
+
+  // Range-Label im Header
+  const rangeEl = document.getElementById('epRange');
+  if (rangeEl) {
+    const uKm = rangeEl.dataset.unit || '';
+    rangeEl.textContent =
+      `${startKm.toFixed(1)}–${(startKm+totalDist).toFixed(1)} km  ·  +${_epUphill(eles)} m  −${_epDownhill(eles)} m  ·  Δ${Math.round(maxE-minE)} m`;
+  }
+}
+
+function _epUphill(eles) {
+  let u = 0;
+  for (let i = 1; i < eles.length; i++) { const d = eles[i]-eles[i-1]; if (d>0) u+=d; }
+  return Math.round(u);
+}
+function _epDownhill(eles) {
+  let d = 0;
+  for (let i = 1; i < eles.length; i++) { const dd = eles[i-1]-eles[i]; if (dd>0) d+=dd; }
+  return Math.round(d);
+}
+
+function _epMouseMove(e) {
+  if (!_epState) return;
+  const wrap = document.getElementById('epSvgWrap');
+  if (!wrap) return;
+  const rect = wrap.getBoundingClientRect();
+  const mx = e.clientX - rect.left;
+  const { xs, ys, eles, slopes, dists, idxs, pts, startKm, PL, PT, IW } = _epState;
+  if (mx < PL || mx > PL + IW) { _epMouseLeave(); return; }
+
+  let best = 0, bestD = Infinity;
+  for (let i = 0; i < xs.length; i++) {
+    const d = Math.abs(xs[i] - mx);
+    if (d < bestD) { bestD = d; best = i; }
+  }
+
+  const ele = Math.round(eles[best]);
+  const slope = slopes[best];
+  const kmAbs = startKm + dists[best];
+  const col   = slopeColor(slope);
+  const sStr  = (slope >= 0 ? '+' : '') + slope.toFixed(1) + '%';
+
+  // Cursor-Linie
+  const cur = document.getElementById('epCursor');
+  if (cur) { cur.style.left = xs[best].toFixed(1) + 'px'; cur.style.display = 'block'; }
+
+  // Tooltip
+  const tip = document.getElementById('epTooltip');
+  if (tip) {
+    tip.innerHTML = `<b>${ele} m</b> &nbsp;<span style="color:${col};font-weight:600">${sStr}</span>&nbsp; ${kmAbs.toFixed(1)} km`;
+    const tipX = Math.max(45, Math.min(xs[best], wrap.clientWidth - 50));
+    tip.style.left = tipX + 'px';
+    tip.style.display = 'block';
+  }
+
+  // Punkt auf Karte markieren
+  if (leafletMap && pts[best]) {
+    if (!_epCrosshairMarker) {
+      _epCrosshairMarker = L.circleMarker(pts[best], {
+        radius: 5, color: '#fff', fillColor: col, fillOpacity: 1, weight: 2, zIndexOffset: 1500
+      }).addTo(leafletMap);
+    } else {
+      _epCrosshairMarker.setLatLng(pts[best]);
+      _epCrosshairMarker.setStyle({ fillColor: col });
+    }
+  }
+}
+
+function _epMouseLeave() {
+  const cur = document.getElementById('epCursor');
+  const tip = document.getElementById('epTooltip');
+  if (cur) cur.style.display = 'none';
+  if (tip) tip.style.display = 'none';
+  if (_epCrosshairMarker) { _epCrosshairMarker.remove(); _epCrosshairMarker = null; }
+}
 
 // ── Segment-Refresh-Benachrichtigung ─────────────────────────────────────────
 async function checkSegmentRefresh() {
