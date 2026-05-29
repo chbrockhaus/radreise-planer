@@ -1315,7 +1315,7 @@ const OVERPASS_ENDPOINTS=[
   'https://overpass.kumi.systems/api/interpreter',
   'https://overpass.private.coffee/api/interpreter'
 ];
-const OVERPASS_TIMEOUT = 35000; // ms pro Versuch
+const OVERPASS_TIMEOUT = 30000; // ms pro Versuch (30s – Server-Query-Timeout ist 25-30s)
 
 let _overpassActive = 0;
 function _overpassHintShow(msg) {
@@ -1325,7 +1325,7 @@ function _overpassHintShow(msg) {
   el.classList.add('visible');
 }
 function _overpassHintHide() {
-  if (_overpassActive > 0) return; // andere Anfrage noch aktiv
+  if (_overpassActive > 0) return;
   const el = document.getElementById('overpassHint');
   if (el) el.classList.remove('visible');
 }
@@ -1333,43 +1333,42 @@ function _overpassHintHide() {
 async function overpassFetch(q){
   _overpassActive++;
   _overpassHintShow('OSM-Anfrage läuft…');
-  const param='?data='+encodeURIComponent(q);
-  const lastErr = {};
+  const param = '?data=' + encodeURIComponent(q);
 
-  // 1) Alle Endpoints der Reihe nach, je 1 Retry bei Netzwerkfehler
-  for(const ep of OVERPASS_ENDPOINTS){
-    for(let attempt=0; attempt<2; attempt++){
-      try{
-        const r=await fetch(ep+param,{signal:AbortSignal.timeout(OVERPASS_TIMEOUT)});
-        if(r.ok){ _overpassActive--; _overpassHintHide(); return await r.json(); }
-        if(r.status===429){
-          _overpassHintShow('Overpass Rate-Limit – warte…');
-          await new Promise(res=>setTimeout(res,2500));
-          _overpassHintShow('OSM-Anfrage läuft…');
-          lastErr[ep]='429'; break;
-        }
-        if(r.status>=500){ lastErr[ep]=r.status; break; } // Server-Fehler → nächster
-        lastErr[ep]=r.status; break;
-      }catch(e){
-        lastErr[ep]=e.name;
-        if(attempt===0){ _overpassHintShow('Overpass – Retry…'); await new Promise(res=>setTimeout(res,1200)); _overpassHintShow('OSM-Anfrage läuft…'); }
-      }
-    }
-  }
+  try {
+    // Alle Endpoints PARALLEL anfragen – erster Erfolg gewinnt, Rest wird abgebrochen
+    // (statt sequenziell: 4×30s → 120s Worst-Case, jetzt: 30s Worst-Case)
+    const ctls = OVERPASS_ENDPOINTS.map(() => new AbortController());
+    const data = await Promise.any(
+      OVERPASS_ENDPOINTS.map(async (ep, i) => {
+        const sig = typeof AbortSignal.any === 'function'
+          ? AbortSignal.any([ctls[i].signal, AbortSignal.timeout(OVERPASS_TIMEOUT)])
+          : AbortSignal.timeout(OVERPASS_TIMEOUT);
+        const r = await fetch(ep + param, {signal: sig});
+        if (!r.ok) throw new Error('HTTP ' + r.status);
+        ctls.forEach((c, j) => { if (j !== i) c.abort(); }); // andere abbrechen
+        return r.json();
+      })
+    ).catch(() => null); // AggregateError wenn alle scheitern
 
-  // 2) CORS-Proxy als letzter Ausweg (für restriktive Netzwerke)
-  try{
+    if (data) return data;
+
+    // Fallback: CORS-Proxy (für restriktive Netzwerke / file://)
     _overpassHintShow('Overpass – CORS-Proxy…');
-    const r=await fetch('https://corsproxy.io/?'+encodeURIComponent(OVERPASS_ENDPOINTS[0]+param),{signal:AbortSignal.timeout(OVERPASS_TIMEOUT)});
-    if(r.ok){ _overpassActive--; _overpassHintHide(); return await r.json(); }
-  }catch{}
+    try {
+      const r = await fetch('https://corsproxy.io/?' + encodeURIComponent(OVERPASS_ENDPOINTS[0] + param),
+        {signal: AbortSignal.timeout(OVERPASS_TIMEOUT)});
+      if (r.ok) return await r.json();
+    } catch {}
 
-  // Fehlgeschlagen
-  _overpassActive--; _overpassHintHide();
-  if(location.protocol==='file:')
-    throw new Error('Datei als file:// geöffnet – bitte über lokalem Server öffnen:\npython -m http.server 3000\n→ http://localhost:3000/radreise_planer.html');
-  const codes=Object.values(lastErr).join(', ');
-  throw new Error('Overpass nicht erreichbar ('+codes+'). Bitte Internetverbindung prüfen.');
+    if (location.protocol === 'file:')
+      throw new Error('Datei als file:// geöffnet – bitte über lokalem Server öffnen:\npython -m http.server 3000\n→ http://localhost:3000/radreise_planer.html');
+    throw new Error('Overpass nicht erreichbar. Bitte Internetverbindung prüfen.');
+  } finally {
+    // Wird IMMER ausgeführt – kein verlorener Counter mehr
+    _overpassActive--;
+    _overpassHintHide();
+  }
 }
 
 async function overpassSearch(lat, lon, radiusM=15000){
