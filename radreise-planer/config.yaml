@@ -3,7 +3,7 @@ description: >
   Bikepacking-Routenplaner für mehrtägige Radreisen.
   Teilt GPX-Routen in Etappen auf, sucht Campingplätze
   und berechnet Routen offline über BRouter.
-version: "1.0.9"
+version: "1.1.0"
 slug: "radreise_planer"
 init: false
 
@@ -30,8 +30,10 @@ options:
     - "E5_N50"
     - "E10_N50"
   brouter_memory_mb: 256
+  force_segment_refresh: false
 
 schema:
   brouter_segments:
     - str
   brouter_memory_mb: int
+  force_segment_refresh: bool

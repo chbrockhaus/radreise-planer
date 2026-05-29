@@ -29,17 +29,34 @@ try:
 except:
     print(256)
 " 2>/dev/null)
+    FORCE_REFRESH=$(python3 -c "
+import json
+try:
+    opts = json.load(open('${OPTS_FILE}'))
+    print('true' if opts.get('force_segment_refresh', False) else 'false')
+except:
+    print('false')
+" 2>/dev/null)
 else
     SEGMENTS="E5_N50 E10_N50"
     MEM=256
+    FORCE_REFRESH="false"
 fi
 
 echo "=== Radreise Planer ==="
 echo "  BRouter-Segmente : ${SEGMENTS}"
 echo "  BRouter-Speicher : ${MEM} MB"
 
-# ── Routing-Daten herunterladen (nur wenn fehlend) ────────────────────────────
+# ── Routing-Daten herunterladen ───────────────────────────────────────────────
 SEGMENT_BASE="https://brouter.de/brouter/segments4"
+REFRESHED_SEGS=""
+
+# Bei force_segment_refresh: vorhandene Kacheln löschen → erzwingt Neudownload
+if [ "${FORCE_REFRESH}" = "true" ]; then
+    echo "  ⚠ force_segment_refresh=true — lösche vorhandene Kacheln für Neudownload"
+    rm -f "${SEGMENTS_DIR}"/*.rd5
+fi
+
 for seg in ${SEGMENTS}; do
     FILE="${SEGMENTS_DIR}/${seg}.rd5"
     if [ ! -f "${FILE}" ]; then
@@ -47,12 +64,29 @@ for seg in ${SEGMENTS}; do
         if curl -fsSL --retry 3 -o "${FILE}.tmp" "${SEGMENT_BASE}/${seg}.rd5"; then
             mv "${FILE}.tmp" "${FILE}"
             echo "  ✓ ${seg}.rd5 heruntergeladen"
+            REFRESHED_SEGS="${REFRESHED_SEGS} ${seg}"
         else
             rm -f "${FILE}.tmp"
             echo "  ⚠ Konnte ${seg}.rd5 nicht laden — Routing in dieser Region nicht verfügbar"
         fi
     fi
 done
+
+# Wenn Kacheln aktualisiert wurden: Marker-Datei schreiben (wird im UI angezeigt)
+if [ "${FORCE_REFRESH}" = "true" ] && [ -n "${REFRESHED_SEGS}" ]; then
+    REFRESHED_SEGS_TRIMMED=$(echo "${REFRESHED_SEGS}" | sed 's/^ *//')
+    python3 -c "
+import json, datetime
+segs = '${REFRESHED_SEGS_TRIMMED}'.split()
+data = {
+    'refreshed_at': datetime.datetime.utcnow().strftime('%Y-%m-%dT%H:%M:%SZ'),
+    'segments': segs
+}
+with open('/data/segments_refreshed.json', 'w') as f:
+    json.dump(data, f)
+print('  ✓ Kacheln aktualisiert — Hinweis wird im Browser angezeigt')
+"
+fi
 
 # ── Server starten ────────────────────────────────────────────────────────────
 export DATA_DIR="${DATA_DIR}"

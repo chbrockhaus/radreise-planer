@@ -28,11 +28,12 @@ PROFILES_DIR = os.environ.get('PROFILES_DIR', os.path.join(BROUTER_DIR, 'profile
 CUSTOM_DIR   = os.environ.get('CUSTOM_DIR',   os.path.join(BROUTER_DIR, 'customprofiles'))
 BROUTER_MEM  = os.environ.get('BROUTER_MEMORY_MB', '256')
 
-WEBSITES_FILE     = os.path.join(DATA_DIR, 'camping_websites.json')
-TARGETS_FILE      = os.path.join(DATA_DIR, 'routing_targets.json')
-MANUAL_CAMPS_FILE = os.path.join(DATA_DIR, 'manual_camps.json')
-ROUTE_DATA_FILE   = os.path.join(DATA_DIR, 'route_data_custom.json')
-TOURS_DIR         = os.path.join(DATA_DIR, 'tours')
+WEBSITES_FILE          = os.path.join(DATA_DIR, 'camping_websites.json')
+TARGETS_FILE           = os.path.join(DATA_DIR, 'routing_targets.json')
+MANUAL_CAMPS_FILE      = os.path.join(DATA_DIR, 'manual_camps.json')
+ROUTE_DATA_FILE        = os.path.join(DATA_DIR, 'route_data_custom.json')
+TOURS_DIR              = os.path.join(DATA_DIR, 'tours')
+SEGMENTS_REFRESHED_FILE = os.path.join(DATA_DIR, 'segments_refreshed.json')
 
 BROUTER_PORT = 17777
 APP_DIR      = os.path.dirname(os.path.abspath(__file__))
@@ -163,6 +164,9 @@ class Handler(http.server.SimpleHTTPRequestHandler):
         elif p.startswith('/api/tours/'):
             d = load_tour(p[len('/api/tours/'):])
             self._json(200, d) if d else self._json(404, {'error': 'Tour nicht gefunden'})
+        elif p == '/api/segments-refreshed':
+            d = _load_json(SEGMENTS_REFRESHED_FILE)
+            self._json(200, d if d else None)
         elif p.startswith('/api/brouter'):
             self._proxy_brouter()
         elif p.startswith('/api/overpass'):
@@ -230,6 +234,10 @@ class Handler(http.server.SimpleHTTPRequestHandler):
         if p.startswith('/api/tours/'):
             ok = delete_tour(p[len('/api/tours/'):])
             self._json(200 if ok else 404, {'ok': ok})
+        elif p == '/api/segments-refreshed':
+            if os.path.exists(SEGMENTS_REFRESHED_FILE):
+                os.remove(SEGMENTS_REFRESHED_FILE)
+            self._json(200, {'ok': True})
         else:
             self.send_response(404); self.end_headers()
 
