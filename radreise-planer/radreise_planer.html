@@ -99,6 +99,13 @@ header{background:var(--surface);border-bottom:1px solid var(--border);padding:9
 .camp-osm-hint{position:absolute;left:50%;transform:translateX(-50%);bottom:42px;background:rgba(24,28,36,.88);border:1px solid var(--border);border-radius:4px;padding:4px 10px;font-size:10px;color:var(--muted);z-index:1000;pointer-events:none;white-space:nowrap}
 #overpassHint{position:fixed;bottom:52px;left:50%;transform:translateX(-50%);background:rgba(18,22,32,.93);border:1px solid var(--accent,#3d8eff);border-radius:20px;padding:5px 14px 5px 10px;font-size:11px;color:var(--accent,#3d8eff);z-index:9500;display:none;align-items:center;gap:7px;white-space:nowrap;box-shadow:0 2px 10px rgba(0,0,0,.4);pointer-events:none}
 #overpassHint.visible{display:flex}
+#segmentRefreshNotice{position:fixed;top:60px;left:50%;transform:translateX(-50%);background:rgba(18,22,32,.97);border:1px solid var(--green,#4ade80);border-radius:10px;padding:14px 18px;font-size:12px;color:var(--fg);z-index:9600;display:none;flex-direction:column;gap:10px;min-width:280px;max-width:440px;box-shadow:0 4px 24px rgba(0,0,0,.55)}
+#segmentRefreshNotice.visible{display:flex}
+#segmentRefreshNotice .srn-title{color:var(--green,#4ade80);font-weight:600;font-size:13px;display:flex;align-items:center;gap:7px}
+#segmentRefreshNotice .srn-body{color:var(--muted);font-size:11px;line-height:1.6}
+#segmentRefreshNotice .srn-segs{font-family:monospace;color:var(--fg);font-size:11px;word-break:break-all}
+#segmentRefreshNotice .srn-ok{align-self:flex-end;background:var(--green,#4ade80);color:#000;border:none;border-radius:5px;padding:6px 22px;cursor:pointer;font-size:12px;font-weight:700;margin-top:2px}
+#segmentRefreshNotice .srn-ok:hover{opacity:.85}
 .camp{cursor:pointer}
 .camp-active{background:rgba(61,142,255,.14)!important;border-left:3px solid var(--accent);padding-left:5px}
 .ws-row{display:flex;align-items:center;gap:4px;margin-top:3px;flex-wrap:wrap}
@@ -276,6 +283,14 @@ header{background:var(--surface);border-bottom:1px solid var(--border);padding:9
     </div>
     <div id="campOsmHint" class="camp-osm-hint" style="display:none"></div>
     <div id="overpassHint"></div>
+    <div id="segmentRefreshNotice">
+      <div class="srn-title">✓ Routing-Kacheln aktualisiert</div>
+      <div class="srn-body">Die BRouter-Routing-Daten wurden neu heruntergeladen:<br>
+        <span class="srn-segs" id="segmentRefreshSegs"></span>
+      </div>
+      <div class="srn-body" id="segmentRefreshTime" style="font-size:10px"></div>
+      <button class="srn-ok" onclick="dismissSegmentRefresh()">OK</button>
+    </div>
     <!-- Route-Edit Toolbar -->
     <div id="routeEditBar" style="display:none;position:absolute;top:12px;left:52px;z-index:1001;background:rgba(24,28,36,.94);border:1px solid var(--border);border-radius:6px;padding:6px 10px;align-items:center;gap:8px;white-space:nowrap">
       <span style="font-size:10px;color:var(--muted)">Klick auf Karte → Wegpunkt</span>
@@ -1317,6 +1332,33 @@ const OVERPASS_ENDPOINTS=[
   'https://overpass.private.coffee/api/interpreter'
 ];
 const OVERPASS_TIMEOUT = 30000; // ms pro Versuch (30s – Server-Query-Timeout ist 25-30s)
+
+// ── Segment-Refresh-Benachrichtigung ─────────────────────────────────────────
+async function checkSegmentRefresh() {
+  try {
+    const r = await fetch('/api/segments-refreshed');
+    if (!r.ok) return;
+    const d = await r.json();
+    if (!d) return;
+    const segs = (d.segments || []).join('  ');
+    const t = d.refreshed_at
+      ? new Date(d.refreshed_at).toLocaleString('de-DE', {dateStyle:'short', timeStyle:'short'})
+      : '';
+    const el   = document.getElementById('segmentRefreshNotice');
+    const segsEl = document.getElementById('segmentRefreshSegs');
+    const timeEl = document.getElementById('segmentRefreshTime');
+    if (!el) return;
+    if (segsEl) segsEl.textContent = segs;
+    if (timeEl) timeEl.textContent = t ? 'Aktualisiert am ' + t + ' UTC' : '';
+    el.classList.add('visible');
+  } catch {}
+}
+
+async function dismissSegmentRefresh() {
+  try { await fetch('/api/segments-refreshed', { method: 'DELETE' }); } catch {}
+  const el = document.getElementById('segmentRefreshNotice');
+  if (el) el.classList.remove('visible');
+}
 
 let _overpassActive = 0;
 function _overpassHintShow(msg) {
@@ -3239,6 +3281,7 @@ Promise.all([wsInit(), loadRoute(), loadManualCamps()]).then(async () => {
   initMap();
   await loadTargets();   // after loadRoute so NUM_STAGES is correct
   drawCustomRoutes(); render();
+  checkSegmentRefresh();  // Hinweis anzeigen wenn Kacheln frisch aktualisiert wurden
 });
 </script>
 </body>
