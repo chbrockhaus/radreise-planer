@@ -640,6 +640,21 @@ let _currentTileIdx = 0;
 let _tileLayer = null;
 
 function initMap() {
+  // ── Chrome GPU-Kachel-Lücken-Fix ──────────────────────────────────────────
+  // Leaflet positioniert Kachel-Container per translate3d → Chrome erzeugt pro
+  // Container eine eigene GPU-Compositing-Ebene; an den Nahtstellen entstehen
+  // 1-px-Lücken (weiße Linien). Fix: translate3d → translate (kein GPU-Layer)
+  // + Pixel-Koordinaten auf ganze Zahlen runden.
+  (function(){
+    L.DomUtil.setTransform = function(el, offset, scale){
+      var pos = offset ? L.point(Math.round(offset.x), Math.round(offset.y))
+                       : new L.Point(0, 0);
+      el.style[L.DomUtil.TRANSFORM] =
+        'translate(' + pos.x + 'px,' + pos.y + 'px)' +
+        (scale ? ' scale(' + scale + ')' : '');
+    };
+  })();
+
   leafletMap = L.map('map', { zoomControl: false });
   _tileLayer = L.tileLayer(TILE_LAYERS[0].url, {
     attribution: TILE_LAYERS[0].attribution,
