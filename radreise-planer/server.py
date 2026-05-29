@@ -251,10 +251,14 @@ class Handler(http.server.SimpleHTTPRequestHandler):
 
         ingress = self._ingress_path()
         if ingress:
-            # Minimaler Fetch-Interceptor: leitet absolute /api/-Pfade über den Ingress-Proxy
+            # Fetch-Interceptor: /api/-Pfade über den Ingress-Proxy leiten.
+            # _TILE_BASE wird von TILE_LAYERS genutzt damit auch <img>-Kacheln
+            # den richtigen Pfad bekommen (Leaflet nutzt kein fetch() für Tiles).
             patch = (
-                f'<script>/* HA-Ingress fetch-patch */'
-                f'(function(){{var b={json.dumps(ingress)};var F=window.fetch;'
+                f'<script>/* HA-Ingress patch */'
+                f'(function(){{var b={json.dumps(ingress)};'
+                f'window._TILE_BASE=b;'
+                f'var F=window.fetch;'
                 f'window.fetch=function(u,o){{if(typeof u==="string"&&u.startsWith("/api/"))u=b+u;'
                 f'return F.call(this,u,o)}};'
                 f'}})();</script>'
