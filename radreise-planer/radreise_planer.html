@@ -80,10 +80,6 @@ header{background:var(--surface);border-bottom:1px solid var(--border);padding:9
 .leg-dot{width:10px;height:10px;border-radius:50%;border:1.5px solid rgba(255,255,255,.5);flex-shrink:0}
 .leg-line{width:18px;height:3px;border-radius:2px;flex-shrink:0}
 .leg-sep{border:none;border-top:1px solid var(--border);margin:2px 0}
-/* Fix: weiße Lücken zwischen Kacheln durch Sub-Pixel-Rendering */
-.leaflet-tile{width:257px!important;height:257px!important}
-.leaflet-tile-pane{will-change:transform;transform:translateZ(0)}
-.leaflet-map-pane{will-change:transform}
 .leaflet-control-scale-line{background:rgba(24,28,36,.88)!important;border:1px solid var(--border)!important;color:var(--text)!important;font-family:'DM Sans',sans-serif!important;font-size:10px!important;border-top:2px solid var(--muted)!important;padding:1px 5px!important}
 .leaflet-tooltip{font-family:'DM Sans',sans-serif;font-size:11px;line-height:1.5;background:rgba(24,28,36,.95);border:1px solid #252c3c;color:#dce4f0;border-radius:5px;padding:5px 9px;pointer-events:none}
 .leaflet-tooltip-top::before{border-top-color:#252c3c}
@@ -641,7 +637,7 @@ let _currentTileIdx = 0;
 let _tileLayer = null;
 
 function initMap() {
-  leafletMap = L.map('map', { zoomControl: false, zoomSnap: 0.5, wheelPxPerZoomLevel: 80 });
+  leafletMap = L.map('map', { zoomControl: false });
   _tileLayer = L.tileLayer(TILE_LAYERS[0].url, {
     attribution: TILE_LAYERS[0].attribution,
     maxZoom: TILE_LAYERS[0].maxZoom
