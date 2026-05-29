@@ -1430,6 +1430,11 @@ function toggleElevProfile() {
   document.getElementById('elevProfile').classList.toggle('ep-visible', _epVisible);
   const btn = document.getElementById('elevProfileBtn');
   if (btn) btn.style.color = _epVisible ? 'var(--accent)' : '';
+  // Leaflet-Steuerung (Maßstab etc.) nach oben verschieben damit sie nicht überlappt
+  const epH = 22 + 74; // Header + SVG
+  document.querySelectorAll('.leaflet-bottom').forEach(el => {
+    el.style.bottom = _epVisible ? epH + 'px' : '';
+  });
   if (_epVisible) {
     _buildEpLegend();
     renderElevProfile();
@@ -2060,8 +2065,17 @@ function toggleCampList(i) {
 function focusStage(i){
   activeStage=i;
   render();
-  const ep=STAGE_ENDS[i];
-  if(ep) focusOnPoint(ep.lat,ep.lon);
+  // Karte auf gesamte Etappe fitten (Start + Ende sichtbar)
+  if (ROUTE_PTS.length && leafletMap) {
+    const pts = stageRoutePts(i);
+    if (pts.length >= 2) {
+      leafletMap.fitBounds(L.polyline(pts).getBounds(), { padding: [60, 60], maxZoom: 13 });
+    } else {
+      const ep = STAGE_ENDS[i]; if (ep) focusOnPoint(ep.lat, ep.lon);
+    }
+  } else {
+    const ep = STAGE_ENDS[i]; if (ep) focusOnPoint(ep.lat, ep.lon);
+  }
   document.getElementById(`sc${i}`)?.scrollIntoView({behavior:'smooth',block:'nearest'});
 }
 
