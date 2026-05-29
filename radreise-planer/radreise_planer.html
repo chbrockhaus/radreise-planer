@@ -1636,6 +1636,8 @@ async function loadRoute(){
         rebuildStages();
         computeStageEnds(data.stage_names || null);
         updateHeaderStats();
+        // Repariere GPS-Sprünge im Hintergrund sobald BRouter bereit ist
+        setTimeout(_autoRepairGpsJumps, 4000);
         return;
       }
     }
@@ -1644,6 +1646,77 @@ async function loadRoute(){
   console.warn('No route data found — showing new-tour modal');
   setTimeout(() => showTourModal(), 600);
 }
+/** Repariert GPS-Sprünge in ROUTE_PTS via BRouter (läuft einmalig im Hintergrund) */
+async function _autoRepairGpsJumps() {
+  if (!ROUTE_PTS.length) return;
+
+  // Sprünge erkennen (gleiche Logik wie setupNewRoute)
+  const pts  = ROUTE_PTS;
+  const eles = ROUTE_ELEVATIONS;
+  const gaps = [];
+  for (let i = 1; i < pts.length; i++)
+    gaps.push(hav(pts[i-1][0], pts[i-1][1], pts[i][0], pts[i][1]));
+  const sorted = [...gaps].sort((a, b) => a - b);
+  const p75  = sorted[Math.floor(sorted.length * 0.75)] || 0.1;
+  const thr  = Math.max(p75 * 10, 0.5);
+  const jumpIdxs = gaps.reduce((acc, g, i) => (g > thr ? [...acc, i + 1] : acc), []);
+  if (!jumpIdxs.length) return;
+
+  // BRouter-Verfügbarkeit prüfen
+  try {
+    await fetch(`http://localhost:${BROUTER_PORT}/brouter?lonlats=6,51%7C6.1,51&profile=trekking&alternativeidx=0&format=geojson`,
+      { signal: AbortSignal.timeout(3000) });
+  } catch { return; } // BRouter nicht bereit — überspringe
+
+  // Toast anzeigen
+  const toast = document.createElement('div');
+  toast.style.cssText = 'position:fixed;bottom:80px;left:50%;transform:translateX(-50%);' +
+    'background:var(--bg1,#1e1e2e);border:1px solid var(--accent,#3d8eff);' +
+    'border-radius:8px;padding:8px 16px;font-size:12px;color:var(--accent,#3d8eff);' +
+    'z-index:9999;box-shadow:0 4px 12px rgba(0,0,0,.4);white-space:nowrap';
+  toast.textContent = `⏳ Repariere ${jumpIdxs.length} GPS-Lücken via BRouter…`;
+  document.body.appendChild(toast);
+
+  const repairedPts = [], repairedEles = [];
+  let fixed = 0;
+  let prev  = 0;
+  for (const ji of jumpIdxs) {
+    for (let i = prev; i < ji; i++) {
+      repairedPts.push(pts[i]);
+      if (eles.length) repairedEles.push(eles[i] ?? 0);
+    }
+    try {
+      const { pts: rPts, eles: rEles } = await brouterRoute([pts[ji - 1], pts[ji]]);
+      for (let k = 1; k < rPts.length; k++) {
+        repairedPts.push(rPts[k]);
+        if (eles.length) repairedEles.push(rEles.length > k ? rEles[k] : (eles[ji] ?? 0));
+      }
+      fixed++;
+    } catch {
+      repairedPts.push(pts[ji]);
+      if (eles.length) repairedEles.push(eles[ji] ?? 0);
+    }
+    prev = ji + 1;
+  }
+  for (let i = prev; i < pts.length; i++) {
+    repairedPts.push(pts[i]);
+    if (eles.length) repairedEles.push(eles[i] ?? 0);
+  }
+
+  if (!fixed) { toast.remove(); return; }
+
+  // Route aktualisieren und speichern
+  ROUTE_PTS          = repairedPts;
+  ROUTE_ELEVATIONS   = repairedEles.length ? repairedEles : eles;
+  buildCumDist();
+  TOTAL_KM = routeCumDist[routeCumDist.length - 1] || TOTAL_KM;
+  buildMainRouteLayer();
+  await saveRouteData();
+
+  toast.textContent = `✓ ${fixed} GPS-Lücke${fixed > 1 ? 'n' : ''} repariert und gespeichert`;
+  setTimeout(() => toast.remove(), 5000);
+}
+
 // Profil-Dropdown befüllen
 const profileSel = document.getElementById('profileSel');
 BROUTER_PROFILES.forEach(p => {
