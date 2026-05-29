@@ -1309,31 +1309,50 @@ function hav(la1,lo1,la2,lo2){
 const OVERPASS_ENDPOINTS=[
   'https://overpass-api.de/api/interpreter',
   'https://lz4.overpass-api.de/api/interpreter',
-  'https://overpass.kumi.systems/api/interpreter'
+  'https://overpass.kumi.systems/api/interpreter',
+  'https://overpass.private.coffee/api/interpreter'
 ];
+const OVERPASS_TIMEOUT = 35000; // ms pro Versuch
 
 async function overpassFetch(q){
   const param='?data='+encodeURIComponent(q);
-  // 1) Direkte Endpoints
+  const lastErr = {};
+
+  // 1) Alle Endpoints der Reihe nach, je 1 Retry bei Netzwerkfehler
   for(const ep of OVERPASS_ENDPOINTS){
-    try{
-      const r=await fetch(ep+param,{signal:AbortSignal.timeout(20000)});
-      if(r.ok) return await r.json();
-    }catch{}
+    for(let attempt=0; attempt<2; attempt++){
+      try{
+        const r=await fetch(ep+param,{signal:AbortSignal.timeout(OVERPASS_TIMEOUT)});
+        if(r.ok) return await r.json();
+        if(r.status===429){
+          // Rate-Limit: kurz warten, dann nächsten Endpoint
+          await new Promise(res=>setTimeout(res,2500));
+          lastErr[ep]='429'; break;
+        }
+        if(r.status>=500){ lastErr[ep]=r.status; break; } // Server-Fehler → nächster
+        lastErr[ep]=r.status; break;
+      }catch(e){
+        lastErr[ep]=e.name;
+        if(attempt===0) await new Promise(res=>setTimeout(res,1200)); // kurz warten, dann Retry
+      }
+    }
   }
-  // 2) CORS-Proxy Fallback (für file:// oder blockierte Netzwerke)
+
+  // 2) CORS-Proxy als letzter Ausweg (für restriktive Netzwerke)
   try{
-    const r=await fetch('https://corsproxy.io/?'+encodeURIComponent(OVERPASS_ENDPOINTS[0]+param),{signal:AbortSignal.timeout(20000)});
+    const r=await fetch('https://corsproxy.io/?'+encodeURIComponent(OVERPASS_ENDPOINTS[0]+param),{signal:AbortSignal.timeout(OVERPASS_TIMEOUT)});
     if(r.ok) return await r.json();
   }catch{}
+
   // Hilfreiche Fehlermeldung
   if(location.protocol==='file:')
     throw new Error('Datei als file:// geöffnet – bitte über lokalem Server öffnen:\npython -m http.server 3000\n→ http://localhost:3000/radreise_planer.html');
-  throw new Error('Overpass-Server nicht erreichbar. Internetverbindung prüfen.');
+  const codes=Object.values(lastErr).join(', ');
+  throw new Error('Overpass nicht erreichbar ('+codes+'). Bitte Internetverbindung prüfen.');
 }
 
 async function overpassSearch(lat, lon, radiusM=15000){
-  const q=`[out:json][timeout:25];(node["tourism"="camp_site"](around:${radiusM},${lat},${lon});way["tourism"="camp_site"](around:${radiusM},${lat},${lon});node["tourism"="caravan_site"](around:${radiusM},${lat},${lon});way["tourism"="caravan_site"](around:${radiusM},${lat},${lon}););out center tags;`;
+  const q=`[out:json][timeout:30];(node["tourism"="camp_site"](around:${radiusM},${lat},${lon});way["tourism"="camp_site"](around:${radiusM},${lat},${lon});node["tourism"="caravan_site"](around:${radiusM},${lat},${lon});way["tourism"="caravan_site"](around:${radiusM},${lat},${lon}););out center tags;`;
   const data=await overpassFetch(q);
 
   return data.elements.map(el=>{
@@ -3021,7 +3040,7 @@ async function _fetchCampOsm() {
   try {
     let elements = _campOsmCache[key];
     if (!elements) {
-      const q = `[out:json][timeout:15];(`
+      const q = `[out:json][timeout:25];(`
         + `node["tourism"="camp_site"](${s},${w},${n},${e});`
         + `way["tourism"="camp_site"](${s},${w},${n},${e});`
         + `);out center tags;`;
