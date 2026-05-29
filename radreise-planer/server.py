@@ -12,9 +12,11 @@ Radreise Planer – HTTP-Server für Docker / Home Assistant Add-on.
 import http.server
 import json
 import os
+import socketserver
 import subprocess
 import sys
 import urllib.request
+import urllib.parse
 import datetime
 
 # ── Konfiguration ─────────────────────────────────────────────────────────────
@@ -163,6 +165,8 @@ class Handler(http.server.SimpleHTTPRequestHandler):
             self._json(200, d) if d else self._json(404, {'error': 'Tour nicht gefunden'})
         elif p.startswith('/api/brouter'):
             self._proxy_brouter()
+        elif p.startswith('/api/overpass'):
+            self._proxy_overpass()
         else:
             super().do_GET()
 
@@ -235,6 +239,33 @@ class Handler(http.server.SimpleHTTPRequestHandler):
         self.end_headers()
 
     # ── BRouter-Proxy ─────────────────────────────────────────────────────────
+    def _proxy_overpass(self):
+        """Proxied Overpass-Anfragen serverseitig – vermeidet CORS/Browser-Netzwerkprobleme."""
+        qs = self.path[len('/api/overpass'):]  # ?data=...
+        ENDPOINTS = [
+            'https://overpass-api.de/api/interpreter',
+            'https://lz4.overpass-api.de/api/interpreter',
+            'https://overpass.kumi.systems/api/interpreter',
+            'https://overpass.private.coffee/api/interpreter',
+        ]
+        for ep in ENDPOINTS:
+            try:
+                req = urllib.request.Request(
+                    ep + qs,
+                    headers={'User-Agent': 'RadreisePlaner/1.0', 'Accept': 'application/json'}
+                )
+                with urllib.request.urlopen(req, timeout=32) as resp:
+                    data = resp.read()
+                self.send_response(200)
+                self.send_header('Content-Type', 'application/json')
+                self._cors()
+                self.end_headers()
+                self.wfile.write(data)
+                return
+            except Exception:
+                continue
+        self._json(502, {'error': 'Alle Overpass-Endpoints nicht erreichbar'})
+
     def _proxy_brouter(self):
         qs  = self.path[len('/api/brouter'):]
         url = f'http://localhost:{BROUTER_PORT}/brouter{qs}'
@@ -280,7 +311,10 @@ if __name__ == '__main__':
     print(f'  Segmente : {SEGMENTS_DIR}', flush=True)
     print(f'  Port     : {PORT}', flush=True)
 
-    srv = http.server.HTTPServer(('', PORT), Handler)
+    class ThreadingHTTPServer(socketserver.ThreadingMixIn, http.server.HTTPServer):
+        daemon_threads = True  # Threads sterben mit dem Server
+
+    srv = ThreadingHTTPServer(('', PORT), Handler)
     print(f'  ✓ Bereit: http://localhost:{PORT}/', flush=True)
     with srv:
         try:
