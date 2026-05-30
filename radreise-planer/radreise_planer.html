@@ -265,6 +265,13 @@ header{background:var(--surface);border-bottom:1px solid var(--border);padding:9
 .poi-km-btn{flex:1;background:var(--surface2);border:1px solid var(--border);color:var(--muted);border-radius:4px;cursor:pointer;font-size:11px;font-family:'DM Mono',monospace;padding:4px 0;transition:all .15s;line-height:1}
 .poi-km-btn:hover{background:var(--surface);color:var(--text)}
 .poi-km-btn.active{background:var(--accent);color:#fff;border-color:var(--accent)}
+.poi-mode-btns{display:flex;gap:3px;margin:2px 0}
+.poi-mode-btn{flex:1;background:var(--surface2);border:1px solid var(--border);color:var(--muted);border-radius:4px;cursor:pointer;font-size:10px;font-weight:600;padding:4px 0;transition:all .15s;text-transform:uppercase;letter-spacing:.04em;font-family:'DM Sans',sans-serif}
+.poi-mode-btn:hover{background:var(--surface);color:var(--text)}
+.poi-mode-btn.active{background:var(--accent);color:#fff;border-color:var(--accent)}
+.poi-rkm-btn{flex:1;background:var(--surface2);border:1px solid var(--border);color:var(--muted);border-radius:4px;cursor:pointer;font-size:11px;font-family:'DM Mono',monospace;padding:4px 0;transition:all .15s;line-height:1}
+.poi-rkm-btn:hover{background:var(--surface);color:var(--text)}
+.poi-rkm-btn.active{background:var(--green);color:#000;border-color:var(--green)}
 /* ── Feature 9: Mobile / Responsive ── */
 .sb-handle{display:none;justify-content:center;align-items:center;padding:10px 0 6px;cursor:pointer;flex-shrink:0;user-select:none}
 .sb-handle::before{content:'';width:40px;height:4px;background:var(--border);border-radius:2px}
@@ -379,17 +386,33 @@ header{background:var(--surface);border-bottom:1px solid var(--border);padding:9
     </div>
     <!-- POI-Einstellungen -->
     <div id="poiSettingsPanel">
-      <div class="poi-set-lbl">POIs laden bis</div>
-      <div class="poi-set-lbl" style="margin-top:2px">Maßstabsbalken ≤</div>
-      <div class="poi-km-btns">
-        <button class="poi-km-btn" data-km="1"  onclick="setPoiMaxKm(1)">1</button>
-        <button class="poi-km-btn" data-km="2"  onclick="setPoiMaxKm(2)">2</button>
-        <button class="poi-km-btn" data-km="3"  onclick="setPoiMaxKm(3)">3</button>
-        <button class="poi-km-btn" data-km="5"  onclick="setPoiMaxKm(5)">5</button>
-        <button class="poi-km-btn" data-km="10" onclick="setPoiMaxKm(10)">10</button>
+      <div class="poi-set-lbl">Suchmodus</div>
+      <div class="poi-mode-btns">
+        <button class="poi-mode-btn" data-mode="map"   onclick="setPoiMode('map')">Karte</button>
+        <button class="poi-mode-btn" data-mode="route" onclick="setPoiMode('route')">Strecke</button>
       </div>
-      <div class="poi-set-sub">km</div>
-      <div class="poi-set-current">Karte zeigt: <span id="poiCurrentKm">–</span></div>
+      <div id="poiMapControls">
+        <div class="poi-set-lbl" style="margin-top:4px">Maßstabsbalken ≤</div>
+        <div class="poi-km-btns">
+          <button class="poi-km-btn" data-km="1"  onclick="setPoiMaxKm(1)">1</button>
+          <button class="poi-km-btn" data-km="2"  onclick="setPoiMaxKm(2)">2</button>
+          <button class="poi-km-btn" data-km="3"  onclick="setPoiMaxKm(3)">3</button>
+          <button class="poi-km-btn" data-km="5"  onclick="setPoiMaxKm(5)">5</button>
+          <button class="poi-km-btn" data-km="10" onclick="setPoiMaxKm(10)">10</button>
+        </div>
+        <div class="poi-set-sub">km &nbsp;·&nbsp; Karte: <span id="poiCurrentKm">–</span></div>
+      </div>
+      <div id="poiRouteControls" style="display:none">
+        <div class="poi-set-lbl" style="margin-top:4px">Abstand von Route ≤</div>
+        <div class="poi-km-btns">
+          <button class="poi-rkm-btn" data-rkm="1" onclick="setPoiRouteKm(1)">1</button>
+          <button class="poi-rkm-btn" data-rkm="2" onclick="setPoiRouteKm(2)">2</button>
+          <button class="poi-rkm-btn" data-rkm="3" onclick="setPoiRouteKm(3)">3</button>
+          <button class="poi-rkm-btn" data-rkm="4" onclick="setPoiRouteKm(4)">4</button>
+          <button class="poi-rkm-btn" data-rkm="5" onclick="setPoiRouteKm(5)">5</button>
+        </div>
+        <div class="poi-set-sub">km von der geplanten Strecke</div>
+      </div>
     </div>
     <!-- Höhenprofil -->
     <div id="elevProfile">
@@ -741,7 +764,7 @@ function initMap() {
 
   leafletMap.on('moveend zoomend', () => {
     if (_epVisible) _scheduleElevProfile();
-    if (_activePois.size > 0) _schedulePoiRefresh();
+    if (_activePois.size > 0 && _poiMode === 'map') _schedulePoiRefresh();
     _updatePoiCurrentKm();
   });
 
@@ -3716,8 +3739,11 @@ let   _poiTimer   = null;
 
 // ── POI Zoom-Schwelle ─────────────────────────────────────────────────────────
 const _POI_KM_STEPS = [1, 2, 3, 5, 10];
-let _poiMaxKm = _POI_KM_STEPS.includes(parseInt(localStorage.getItem('poiMaxKm')))
+let _poiMaxKm  = _POI_KM_STEPS.includes(parseInt(localStorage.getItem('poiMaxKm')))
   ? parseInt(localStorage.getItem('poiMaxKm')) : 10;
+let _poiMode   = localStorage.getItem('poiMode') || 'map';
+let _poiRouteKm = [1,2,3,4,5].includes(parseInt(localStorage.getItem('poiRouteKm')))
+  ? parseInt(localStorage.getItem('poiRouteKm')) : 2;
 
 function _mapVisibleKm() {
   // Liest den tatsächlichen Wert des Leaflet-Maßstabsbalkens (unten rechts) aus dem DOM.
@@ -3748,9 +3774,9 @@ function togglePoiSettings() {
 }
 
 function _updatePoiKmBtns() {
-  document.querySelectorAll('.poi-km-btn').forEach(btn => {
-    btn.classList.toggle('active', +btn.dataset.km === _poiMaxKm);
-  });
+  document.querySelectorAll('.poi-km-btn') .forEach(b => b.classList.toggle('active', +b.dataset.km  === _poiMaxKm));
+  document.querySelectorAll('.poi-rkm-btn').forEach(b => b.classList.toggle('active', +b.dataset.rkm === _poiRouteKm));
+  document.querySelectorAll('.poi-mode-btn').forEach(b => b.classList.toggle('active', b.dataset.mode === _poiMode));
 }
 
 function setPoiMaxKm(km) {
@@ -3760,8 +3786,27 @@ function setPoiMaxKm(km) {
   _activePois.forEach(id => _fetchPoiCat(id));
 }
 
+function setPoiRouteKm(km) {
+  _poiRouteKm = km;
+  localStorage.setItem('poiRouteKm', km);
+  Object.keys(_poiCache).forEach(k => { if (k.startsWith('route|')) delete _poiCache[k]; });
+  _updatePoiKmBtns();
+  _activePois.forEach(id => _fetchPoiCat(id));
+}
+
+function setPoiMode(mode) {
+  _poiMode = mode;
+  localStorage.setItem('poiMode', mode);
+  document.getElementById('poiMapControls').style.display   = mode === 'map'   ? '' : 'none';
+  document.getElementById('poiRouteControls').style.display = mode === 'route' ? '' : 'none';
+  _updatePoiKmBtns();
+  _activePois.forEach(id => { _poiLayers[id]?.clearLayers(); _fetchPoiCat(id); });
+}
+
 function _initPoiSettings() {
   _updatePoiKmBtns();
+  document.getElementById('poiMapControls').style.display   = _poiMode === 'map'   ? '' : 'none';
+  document.getElementById('poiRouteControls').style.display = _poiMode === 'route' ? '' : 'none';
 }
 
 function togglePoiPanel() {
@@ -3787,9 +3832,48 @@ function _schedulePoiRefresh(delay = 700) {
   _poiTimer = setTimeout(() => { _activePois.forEach(id => _fetchPoiCat(id)); }, delay);
 }
 
+function _renderPoiMarkers(id, cat, elements, borderColor) {
+  if (!_poiLayers[id]) _poiLayers[id] = L.layerGroup().addTo(leafletMap);
+  _poiLayers[id].clearLayers();
+  elements.forEach(el => {
+    const lat = el.lat ?? el.center?.lat;
+    const lon = el.lon ?? el.center?.lon;
+    if (!lat || !lon) return;
+    const t = el.tags || {};
+    const icon = L.divIcon({
+      className: '',
+      html: `<div style="width:26px;height:26px;background:rgba(24,28,36,.92);border:2px solid ${borderColor};border-radius:6px;display:flex;align-items:center;justify-content:center;font-size:14px;box-shadow:0 2px 6px rgba(0,0,0,.5)">${cat.icon}</div>`,
+      iconSize: [26,26], iconAnchor: [13,13]
+    });
+    const m = L.marker([lat, lon], { icon, zIndexOffset: 250 });
+    let popup;
+    if (cat.renderPopup) {
+      popup = cat.renderPopup(t, lat, lon);
+    } else {
+      const name    = t.name || cat.label;
+      const addr    = [t['addr:street'], t['addr:housenumber'], t['addr:city']].filter(Boolean).join(' ');
+      const phone   = t.phone   || t['contact:phone']   || '';
+      const website = t.website || t['contact:website'] || '';
+      const hours   = t['opening_hours'] || '';
+      popup = `<div class="co-inner">
+        <div class="co-title">${name}</div>
+        ${addr    ? `<div class="co-row">📍 ${addr}</div>` : ''}
+        ${hours   ? `<div class="co-row">🕐 ${hours}</div>` : ''}
+        ${phone   ? `<div class="co-row">📞 <a href="tel:${phone}">${phone}</a></div>` : ''}
+        ${website ? `<div class="co-row">🌐 <a href="${website}" target="_blank">${website.replace(/^https?:\/\//,'').slice(0,35)}</a></div>` : ''}
+        <div class="co-osm-link"><a href="https://www.openstreetmap.org/node/${el.id}" target="_blank">OSM</a></div>
+      </div>`;
+    }
+    m.bindPopup(popup, { maxWidth:310, className:'co-popup' });
+    _poiLayers[id].addLayer(m);
+  });
+}
+
 async function _fetchPoiCat(id) {
   const cat = POI_CATS.find(c => c.id === id);
   if (!cat || !leafletMap) return;
+  if (_poiMode === 'route') return _fetchPoiCatRoute(id, cat);
+
   const _visKm = Math.round(_mapVisibleKm());
   if (_visKm > _poiMaxKm) {
     _poiLayers[id]?.clearLayers();
@@ -3798,7 +3882,6 @@ async function _fetchPoiCat(id) {
     return;
   }
   _overpassHintHide();
-  if (!_poiLayers[id]) _poiLayers[id] = L.layerGroup().addTo(leafletMap);
 
   const b = leafletMap.getBounds();
   const g = 0.05;
@@ -3807,7 +3890,7 @@ async function _fetchPoiCat(id) {
   const n = (Math.ceil( b.getNorth()/g)*g).toFixed(4);
   const e = (Math.ceil( b.getEast() /g)*g).toFixed(4);
   const bbox = `${s},${w},${n},${e}`;
-  const ckey = `${id}|${bbox}`;
+  const ckey = `map|${id}|${bbox}`;
   const outClause = cat.outClause || 'out body;';
 
   try {
@@ -3820,40 +3903,32 @@ async function _fetchPoiCat(id) {
       const keys = Object.keys(_poiCache);
       if (keys.length > 120) delete _poiCache[keys[0]];
     }
-    _poiLayers[id].clearLayers();
-    elements.forEach(el => {
-      const lat = el.lat ?? el.center?.lat;
-      const lon = el.lon ?? el.center?.lon;
-      if (!lat || !lon) return;
-      const t = el.tags || {};
-      const icon = L.divIcon({
-        className: '',
-        html: `<div style="width:26px;height:26px;background:rgba(24,28,36,.92);border:2px solid rgba(255,255,255,.55);border-radius:6px;display:flex;align-items:center;justify-content:center;font-size:14px;box-shadow:0 2px 6px rgba(0,0,0,.5)">${cat.icon}</div>`,
-        iconSize: [26,26], iconAnchor: [13,13]
-      });
-      const m = L.marker([lat, lon], { icon, zIndexOffset: 250 });
-      let popup;
-      if (cat.renderPopup) {
-        popup = cat.renderPopup(t, lat, lon);
-      } else {
-        const name    = t.name || cat.label;
-        const addr    = [t['addr:street'], t['addr:housenumber'], t['addr:city']].filter(Boolean).join(' ');
-        const phone   = t.phone   || t['contact:phone']   || '';
-        const website = t.website || t['contact:website'] || '';
-        const hours   = t['opening_hours'] || '';
-        popup = `<div class="co-inner">
-          <div class="co-title">${name}</div>
-          ${addr    ? `<div class="co-row">📍 ${addr}</div>` : ''}
-          ${hours   ? `<div class="co-row">🕐 ${hours}</div>` : ''}
-          ${phone   ? `<div class="co-row">📞 <a href="tel:${phone}">${phone}</a></div>` : ''}
-          ${website ? `<div class="co-row">🌐 <a href="${website}" target="_blank">${website.replace(/^https?:\/\//,'').slice(0,35)}</a></div>` : ''}
-          <div class="co-osm-link"><a href="https://www.openstreetmap.org/node/${el.id}" target="_blank">OSM</a></div>
-        </div>`;
-      }
-      m.bindPopup(popup, { maxWidth:310, className:'co-popup' });
-      _poiLayers[id].addLayer(m);
-    });
+    _renderPoiMarkers(id, cat, elements, 'rgba(255,255,255,.55)');
   } catch(err) { console.warn('POI fetch:', err); }
+}
+
+async function _fetchPoiCatRoute(id, cat) {
+  if (!ROUTE_PTS || ROUTE_PTS.length < 2) {
+    _overpassHintShow('📍 Keine Route geladen — GPX importieren');
+    setTimeout(_overpassHintHide, 2500);
+    return;
+  }
+  const ckey = `route|${id}|${_poiRouteKm}`;
+  const outClause = cat.outClause || 'out body;';
+
+  try {
+    let elements = _poiCache[ckey];
+    if (!elements) {
+      const step  = Math.max(1, Math.floor(ROUTE_PTS.length / 250));
+      const pts   = ROUTE_PTS.filter((_, i) => i % step === 0);
+      const arnd  = `around:${_poiRouteKm * 1000},${pts.map(p => `${p[0]},${p[1]}`).join(',')}`;
+      const q = `[out:json][timeout:60];${cat.query(arnd)}${outClause}`;
+      const data = await overpassFetch(q);
+      elements = data.elements || [];
+      _poiCache[ckey] = elements;
+    }
+    _renderPoiMarkers(id, cat, elements, 'var(--green,#28c76a)');
+  } catch(err) { console.warn('POI route fetch:', err); }
 }
 
 function _shelterPopupHtml(t, lat, lon) {
