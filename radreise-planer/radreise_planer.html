@@ -20,9 +20,12 @@ header{background:var(--surface);border-bottom:1px solid var(--border);padding:9
 .stat{display:flex;flex-direction:column}
 .sl{font-size:9px;color:var(--muted);text-transform:uppercase;letter-spacing:.06em}
 .sv{font-family:'DM Mono',monospace;font-size:13px}
-.main{display:grid;grid-template-columns:360px 1fr;flex:1;overflow:hidden;min-height:0}
+.main{display:flex;flex:1;overflow:hidden;min-height:0}
 /* ── Sidebar ── */
-.sidebar{background:var(--surface);border-right:1px solid var(--border);display:flex;flex-direction:column;overflow:hidden}
+.sidebar{background:var(--surface);border-right:1px solid var(--border);display:flex;flex-direction:column;overflow:hidden;width:360px;flex-shrink:0;transition:width .25s ease}
+.main.sb-hidden .sidebar{width:0;border-right:none}
+.sb-collapse-btn{background:none;border:none;color:var(--muted);cursor:pointer;font-size:16px;padding:0 0 0 8px;line-height:1;flex-shrink:0;transition:color .15s;display:flex;align-items:center}
+.sb-collapse-btn:hover{color:var(--text)}
 .sb-head{padding:11px 15px 8px;border-bottom:1px solid var(--border);display:flex;justify-content:space-between;align-items:center;flex-shrink:0}
 .sb-head h2{font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.05em;color:var(--muted)}
 #searchAllBtn{font-size:11px;font-weight:600;background:var(--accent);color:#fff;border:none;border-radius:5px;padding:5px 11px;cursor:pointer;transition:opacity .2s;font-family:'DM Sans',sans-serif;white-space:nowrap}
@@ -267,6 +270,7 @@ header{background:var(--surface);border-bottom:1px solid var(--border);padding:9
         <button class="adj-btn" onclick="changeStageCount(+1)" style="width:18px;height:18px;font-size:13px" title="Mehr Etappen">+</button>
       </div>
       <button id="searchAllBtn" onclick="searchAll()">▶ Alle suchen</button>
+      <button class="sb-collapse-btn" onclick="toggleSidebar()" title="Sidebar ausblenden">◀</button>
     </div>
     <div class="note-bar" style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
       <span>OSM/Overpass · Radius 15–25 km</span>
@@ -309,6 +313,7 @@ header{background:var(--surface);border-bottom:1px solid var(--border);padding:9
       </div>
     </div>
     <div class="map-controls">
+      <button class="map-btn" id="sbExpandBtn" onclick="toggleSidebar()" title="Sidebar einblenden" style="display:none;font-size:13px">▶</button>
       <button class="map-btn" onclick="zoomMap(1)" title="Zoom in">+</button>
       <button class="map-btn" onclick="zoomMap(-1)" title="Zoom out">−</button>
       <button class="map-btn" onclick="resetView()" title="Übersicht" style="font-size:13px">⊡</button>
@@ -1011,6 +1016,17 @@ function drawMarkers() {
 }
 
 function zoomMap(delta) { delta > 0 ? leafletMap.zoomIn() : leafletMap.zoomOut(); }
+
+let _sbHidden = false;
+function toggleSidebar() {
+  _sbHidden = !_sbHidden;
+  document.querySelector('.main').classList.toggle('sb-hidden', _sbHidden);
+  const expandBtn = document.getElementById('sbExpandBtn');
+  if (expandBtn) expandBtn.style.display = _sbHidden ? 'flex' : 'none';
+  // Leaflet muss die neue Kartengröße kennen — nach Transition
+  setTimeout(() => { if (leafletMap) leafletMap.invalidateSize(); }, 270);
+}
+
 function resetView() {
   if (ROUTE_PTS.length) leafletMap.fitBounds(L.polyline(ROUTE_PTS).getBounds(), { padding: [40, 40] });
 }
