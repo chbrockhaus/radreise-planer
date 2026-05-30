@@ -1848,11 +1848,12 @@ async function overpassFetch(q, timeoutMs = OVERPASS_TIMEOUT){
   const usePost = q.length > 600;
   const param   = '?data=' + encodeURIComponent(q);
 
-  const mkOpts = () => {
-    const timeSig = AbortSignal.timeout(timeoutMs);
+  const ctls = OVERPASS_ENDPOINTS.map(() => new AbortController());
+
+  const mkOpts = (i) => {
+    const signals = [userAbortSig, AbortSignal.timeout(timeoutMs), ctls[i].signal];
     const signal  = typeof AbortSignal.any === 'function'
-      ? AbortSignal.any([userAbortSig, timeSig])
-      : timeSig;
+      ? AbortSignal.any(signals) : AbortSignal.timeout(timeoutMs);
     if (usePost) return {
       method: 'POST',
       headers: {'Content-Type': 'application/x-www-form-urlencoded'},
@@ -1863,10 +1864,9 @@ async function overpassFetch(q, timeoutMs = OVERPASS_TIMEOUT){
   };
 
   try {
-    const ctls = OVERPASS_ENDPOINTS.map(() => new AbortController());
     const data = await Promise.any(
       OVERPASS_ENDPOINTS.map(async (ep, i) => {
-        const r = await fetch(usePost ? ep : ep + param, mkOpts());
+        const r = await fetch(usePost ? ep : ep + param, mkOpts(i));
         if (!r.ok) throw new Error('HTTP ' + r.status);
         ctls.forEach((c, j) => { if (j !== i) c.abort(); });
         return r.json();
@@ -3865,7 +3865,7 @@ function togglePoiCat(id) {
   document.querySelector(`.poi-btn[data-cat="${id}"]`)?.classList.toggle('poi-active', _activePois.has(id));
 }
 
-function _schedulePoiRefresh(delay = 700) {
+function _schedulePoiRefresh(delay = 350) {
   clearTimeout(_poiTimer);
   _poiTimer = setTimeout(() => { _activePois.forEach(id => _fetchPoiCat(id)); }, delay);
 }
