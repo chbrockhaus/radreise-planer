@@ -1822,28 +1822,33 @@ function _overpassHintHide() {
 async function overpassFetch(q){
   _overpassActive++;
   _overpassHintShow('OSM-Anfrage läuft…');
-  const param = '?data=' + encodeURIComponent(q);
+  // POST statt GET – verhindert URL-Längen-Limit bei langen around-Abfragen (Route-Modus)
+  const postOpts = (sig) => ({
+    method:  'POST',
+    headers: {'Content-Type': 'application/x-www-form-urlencoded'},
+    body:    'data=' + encodeURIComponent(q),
+    signal:  sig,
+  });
 
   try {
-    // Alle Endpoints PARALLEL anfragen – erster Erfolg gewinnt, Rest wird abgebrochen
-    // (statt sequenziell: 4×30s → 120s Worst-Case, jetzt: 30s Worst-Case)
     const ctls = OVERPASS_ENDPOINTS.map(() => new AbortController());
     const data = await Promise.any(
       OVERPASS_ENDPOINTS.map(async (ep, i) => {
         const sig = typeof AbortSignal.any === 'function'
           ? AbortSignal.any([ctls[i].signal, AbortSignal.timeout(OVERPASS_TIMEOUT)])
           : AbortSignal.timeout(OVERPASS_TIMEOUT);
-        const r = await fetch(ep + param, {signal: sig});
+        const r = await fetch(ep, postOpts(sig));
         if (!r.ok) throw new Error('HTTP ' + r.status);
-        ctls.forEach((c, j) => { if (j !== i) c.abort(); }); // andere abbrechen
+        ctls.forEach((c, j) => { if (j !== i) c.abort(); });
         return r.json();
       })
-    ).catch(() => null); // AggregateError wenn alle scheitern
+    ).catch(() => null);
 
     if (data) return data;
 
-    // Fallback: CORS-Proxy (für restriktive Netzwerke / file://)
+    // Fallback: CORS-Proxy via GET
     _overpassHintShow('Overpass – CORS-Proxy…');
+    const param = '?data=' + encodeURIComponent(q);
     try {
       const r = await fetch('https://corsproxy.io/?' + encodeURIComponent(OVERPASS_ENDPOINTS[0] + param),
         {signal: AbortSignal.timeout(OVERPASS_TIMEOUT)});
@@ -1854,7 +1859,6 @@ async function overpassFetch(q){
       throw new Error('Datei als file:// geöffnet – bitte über lokalem Server öffnen:\npython -m http.server 3000\n→ http://localhost:3000/radreise_planer.html');
     throw new Error('Overpass nicht erreichbar. Bitte Internetverbindung prüfen.');
   } finally {
-    // Wird IMMER ausgeführt – kein verlorener Counter mehr
     _overpassActive--;
     _overpassHintHide();
   }

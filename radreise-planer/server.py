@@ -305,6 +305,10 @@ class Handler(http.server.SimpleHTTPRequestHandler):
         elif p == '/api/tours':
             try:    self._json(200, {'ok': True, 'id': save_tour(json.loads(body))})
             except Exception as e: self._json(500, {'error': str(e)})
+        elif p == '/api/overpass':
+            # POST-Variante: body ist 'data=<url-encoded-query>'
+            # Wird für lange around-Abfragen (Route-Modus) verwendet
+            self._proxy_overpass_post(body)
         else:
             self.send_response(404); self.end_headers()
 
@@ -384,23 +388,51 @@ class Handler(http.server.SimpleHTTPRequestHandler):
         except Exception:
             self.send_response(502); self.end_headers()
 
-    # ── BRouter-Proxy ─────────────────────────────────────────────────────────
+    # ── Overpass-Proxy ────────────────────────────────────────────────────────
+    _OVERPASS_EPS = [
+        'https://overpass-api.de/api/interpreter',
+        'https://lz4.overpass-api.de/api/interpreter',
+        'https://overpass.kumi.systems/api/interpreter',
+        'https://overpass.private.coffee/api/interpreter',
+    ]
+
     def _proxy_overpass(self):
-        """Proxied Overpass-Anfragen serverseitig – vermeidet CORS/Browser-Netzwerkprobleme."""
+        """GET-Variante: leitet ?data=... weiter (kurze Abfragen)."""
         qs = self.path[len('/api/overpass'):]  # ?data=...
-        ENDPOINTS = [
-            'https://overpass-api.de/api/interpreter',
-            'https://lz4.overpass-api.de/api/interpreter',
-            'https://overpass.kumi.systems/api/interpreter',
-            'https://overpass.private.coffee/api/interpreter',
-        ]
-        for ep in ENDPOINTS:
+        for ep in self._OVERPASS_EPS:
             try:
                 req = urllib.request.Request(
                     ep + qs,
                     headers={'User-Agent': 'RadreisePlaner/1.0', 'Accept': 'application/json'}
                 )
-                with urllib.request.urlopen(req, timeout=32) as resp:
+                with urllib.request.urlopen(req, timeout=35) as resp:
+                    data = resp.read()
+                self.send_response(200)
+                self.send_header('Content-Type', 'application/json')
+                self._cors()
+                self.end_headers()
+                self.wfile.write(data)
+                return
+            except Exception:
+                continue
+        self._json(502, {'error': 'Alle Overpass-Endpoints nicht erreichbar'})
+
+    def _proxy_overpass_post(self, body: bytes):
+        """POST-Variante: body = b'data=<url-encoded-query>' (lange around-Abfragen)."""
+        for ep in self._OVERPASS_EPS:
+            try:
+                req = urllib.request.Request(
+                    ep,
+                    data=body,
+                    headers={
+                        'User-Agent':    'RadreisePlaner/1.0',
+                        'Accept':        'application/json',
+                        'Content-Type':  'application/x-www-form-urlencoded',
+                        'Content-Length': str(len(body)),
+                    },
+                    method='POST'
+                )
+                with urllib.request.urlopen(req, timeout=65) as resp:
                     data = resp.read()
                 self.send_response(200)
                 self.send_header('Content-Type', 'application/json')
