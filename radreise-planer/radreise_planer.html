@@ -764,7 +764,7 @@ function initMap() {
 
   leafletMap.on('moveend zoomend', () => {
     if (_epVisible) _scheduleElevProfile();
-    if (_activePois.size > 0 && _poiMode === 'map') _schedulePoiRefresh();
+    if (_activePois.size > 0) _schedulePoiRefresh();
     _updatePoiCurrentKm();
   });
 
@@ -3911,33 +3911,55 @@ async function _fetchPoiCat(id) {
   } catch(err) { console.warn('POI fetch:', err); }
 }
 
+function _visibleRoutePts() {
+  if (!leafletMap || !ROUTE_PTS || ROUTE_PTS.length < 2) return [];
+  const b = leafletMap.getBounds().pad(0.1);
+  return ROUTE_PTS.filter(p => b.contains([p[0], p[1]]));
+}
+
 async function _fetchPoiCatRoute(id, cat) {
   if (!ROUTE_PTS || ROUTE_PTS.length < 2) {
+    _poiLayers[id]?.clearLayers();
     _overpassHintShow('📍 Keine Route geladen — GPX importieren');
     setTimeout(_overpassHintHide, 2500);
     return;
   }
-  const ckey = `route|${id}|${_poiRouteKm}`;
+
+  const visPts = _visibleRoutePts();
+  if (visPts.length < 2) {
+    _poiLayers[id]?.clearLayers();
+    _overpassHintShow('📍 Kein Streckenabschnitt im Kartenausschnitt — hereinzoomen');
+    setTimeout(_overpassHintHide, 2000);
+    return;
+  }
+
+  const b = leafletMap.getBounds();
+  const g = 0.05;
+  const s = (Math.floor(b.getSouth()/g)*g).toFixed(3);
+  const w = (Math.floor(b.getWest() /g)*g).toFixed(3);
+  const n = (Math.ceil( b.getNorth()/g)*g).toFixed(3);
+  const e = (Math.ceil( b.getEast() /g)*g).toFixed(3);
+  const ckey = `route|${id}|${_poiRouteKm}|${s},${w},${n},${e}`;
   const outClause = cat.outClause || 'out body;';
 
   try {
     let elements = _poiCache[ckey];
     if (elements === undefined) {
-      const step  = Math.max(1, Math.floor(ROUTE_PTS.length / 100));
-      const pts   = ROUTE_PTS.filter((_, i) => i % step === 0);
-      const arnd  = `around:${_poiRouteKm * 1000},${pts.map(p => `${p[0]},${p[1]}`).join(',')}`;
-      const q = `[out:json][timeout:70];${cat.query(arnd)}${outClause}`;
-      const data = await overpassFetch(q, OVERPASS_TIMEOUT_ROUTE);
+      const step   = Math.max(1, Math.floor(visPts.length / 60));
+      const pts    = visPts.filter((_, i) => i % step === 0);
+      const arnd   = `around:${_poiRouteKm * 1000},${pts.map(p => `${p[0]},${p[1]}`).join(',')}`;
+      const q = `[out:json][timeout:25];${cat.query(arnd)}${outClause}`;
+      const data = await overpassFetch(q);
       elements = data?.elements || [];
       _poiCache[ckey] = elements;
+      const keys = Object.keys(_poiCache);
+      if (keys.length > 150) delete _poiCache[keys[0]];
     }
     _renderPoiMarkers(id, cat, elements, 'var(--green,#28c76a)');
-    if (elements.length === 0)
-      _overpassHintShow(`📍 ${cat.label}: nichts innerhalb ${_poiRouteKm} km der Route gefunden`);
   } catch(err) {
     console.warn('POI route fetch:', err);
-    _overpassHintShow('⚠ Strecken-POI-Abfrage fehlgeschlagen — Timeout oder Netzwerk?');
-    setTimeout(_overpassHintHide, 4000);
+    _overpassHintShow('⚠ Strecken-POI-Abfrage fehlgeschlagen');
+    setTimeout(_overpassHintHide, 3000);
   }
 }
 
