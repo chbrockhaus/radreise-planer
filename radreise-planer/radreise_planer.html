@@ -378,7 +378,7 @@ header{background:var(--surface);border-bottom:1px solid var(--border);padding:9
     <div id="poiSettingsPanel">
       <div class="poi-set-lbl">POIs laden bis</div>
       <div class="poi-set-val" id="poiKmLabel">10 km</div>
-      <input type="range" min="1" max="30" step="1" id="poiKmSlider"
+      <input type="range" min="5" max="30" step="5" id="poiKmSlider"
         oninput="setPoiMaxKm(+this.value)">
       <div class="poi-set-sub">= Maßstabsbalken-Wert der Karte</div>
       <div class="poi-set-current">Karte zeigt: <span id="poiCurrentKm">–</span></div>
@@ -3707,7 +3707,7 @@ const _poiCache   = {};
 let   _poiTimer   = null;
 
 // ── POI Zoom-Schwelle ─────────────────────────────────────────────────────────
-let _poiMaxKm = Math.min(30, Math.max(1, parseInt(localStorage.getItem('poiMaxKm') || '10')));
+let _poiMaxKm = Math.min(30, Math.max(5, Math.round(parseInt(localStorage.getItem('poiMaxKm') || '10') / 5) * 5));
 
 function _mapVisibleKm() {
   if (!leafletMap) return 9999;
