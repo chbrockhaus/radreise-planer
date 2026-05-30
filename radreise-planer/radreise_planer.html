@@ -3710,6 +3710,14 @@ let   _poiTimer   = null;
 let _poiMaxKm = Math.min(30, Math.max(5, Math.round(parseInt(localStorage.getItem('poiMaxKm') || '10') / 5) * 5));
 
 function _mapVisibleKm() {
+  // Liest den tatsächlichen Wert des Leaflet-Maßstabsbalkens (unten rechts) aus dem DOM.
+  const el = document.querySelector('.leaflet-control-scale-line');
+  if (el) {
+    const txt = el.textContent.trim(); // z.B. "10 km" oder "500 m"
+    if (txt.includes('km')) return parseFloat(txt);
+    if (txt.includes('m'))  return parseFloat(txt) / 1000;
+  }
+  // Fallback: Web-Mercator-Formel
   if (!leafletMap) return 9999;
   const zoom = leafletMap.getZoom();
   const lat  = leafletMap.getCenter().lat;
