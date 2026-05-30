@@ -102,8 +102,10 @@ header{background:var(--surface);border-bottom:1px solid var(--border);padding:9
 .co-osm-link a{color:#555}
 .co-osm-link a:hover{color:#888}
 
-#overpassHint{position:fixed;bottom:52px;left:50%;transform:translateX(-50%);background:rgba(18,22,32,.93);border:1px solid var(--accent,#3d8eff);border-radius:20px;padding:5px 14px 5px 10px;font-size:11px;color:var(--accent,#3d8eff);z-index:9500;display:none;align-items:center;gap:7px;white-space:nowrap;box-shadow:0 2px 10px rgba(0,0,0,.4);pointer-events:none}
+#overpassHint{position:fixed;bottom:52px;left:50%;transform:translateX(-50%);background:rgba(18,22,32,.93);border:1px solid var(--accent,#3d8eff);border-radius:20px;padding:5px 10px 5px 12px;font-size:11px;color:var(--accent,#3d8eff);z-index:9500;display:none;align-items:center;gap:8px;white-space:nowrap;box-shadow:0 2px 10px rgba(0,0,0,.4)}
 #overpassHint.visible{display:flex}
+#overpassAbortBtn{background:none;border:none;color:var(--accent,#3d8eff);cursor:pointer;font-size:14px;padding:0 2px;line-height:1;opacity:.7;flex-shrink:0}
+#overpassAbortBtn:hover{opacity:1}
 #segmentRefreshNotice{position:fixed;top:60px;left:50%;transform:translateX(-50%);background:rgba(18,22,32,.97);border:1px solid var(--green,#4ade80);border-radius:10px;padding:14px 18px;font-size:12px;color:var(--fg);z-index:9600;display:none;flex-direction:column;gap:10px;min-width:280px;max-width:440px;box-shadow:0 4px 24px rgba(0,0,0,.55)}
 #segmentRefreshNotice.visible{display:flex}
 #segmentRefreshNotice .srn-title{color:var(--green,#4ade80);font-weight:600;font-size:13px;display:flex;align-items:center;gap:7px}
@@ -427,7 +429,7 @@ header{background:var(--surface);border-bottom:1px solid var(--border);padding:9
         <div class="ep-tooltip" id="epTooltip"></div>
       </div>
     </div>
-    <div id="overpassHint"></div>
+    <div id="overpassHint"><button id="overpassAbortBtn" onclick="abortOverpass()" title="Abfrage abbrechen">✕</button></div>
     <div id="tileDownloadToast">
       <div class="tdt-title"><span class="spin" style="width:12px;height:12px;border-width:2px" id="tileDownloadSpinner" style="display:none"></span><span id="tileDownloadMsg">Routing-Daten fehlen</span></div>
       <div id="tileDownloadSub" style="font-size:11px;color:var(--muted)"></div>
@@ -1808,36 +1810,63 @@ async function dismissSegmentRefresh() {
 }
 
 let _overpassActive = 0;
+let _overpassAbortCtl = null;
+
+function abortOverpass() {
+  if (_overpassAbortCtl) { _overpassAbortCtl.abort(); _overpassAbortCtl = null; }
+  _overpassActive = 0;
+  _overpassHintHide(true);
+  _activePois.forEach(id => _poiLayers[id]?.clearLayers());
+}
+
 function _overpassHintShow(msg) {
   const el = document.getElementById('overpassHint');
   if (!el) return;
-  el.innerHTML = `<span class="spin" style="width:11px;height:11px;border-width:2px"></span>${msg}`;
+  const btn = document.getElementById('overpassAbortBtn');
+  if (btn) btn.style.display = _overpassActive > 0 ? '' : 'none';
+  const span = el.querySelector('span.spin') || document.createElement('span');
+  span.className = 'spin';
+  span.style.cssText = 'width:11px;height:11px;border-width:2px';
+  el.textContent = '';
+  if (_overpassActive > 0) el.appendChild(span);
+  el.append(msg);
+  if (btn) el.appendChild(btn);
   el.classList.add('visible');
 }
-function _overpassHintHide() {
-  if (_overpassActive > 0) return;
+function _overpassHintHide(force = false) {
+  if (!force && _overpassActive > 0) return;
   const el = document.getElementById('overpassHint');
   if (el) el.classList.remove('visible');
 }
 
 async function overpassFetch(q, timeoutMs = OVERPASS_TIMEOUT){
   _overpassActive++;
+  _overpassAbortCtl = new AbortController();
+  const userAbortSig = _overpassAbortCtl.signal;
   _overpassHintShow('OSM-Anfrage läuft…');
-  const postOpts = (sig) => ({
-    method:  'POST',
-    headers: {'Content-Type': 'application/x-www-form-urlencoded'},
-    body:    'data=' + encodeURIComponent(q),
-    signal:  sig,
-  });
+
+  const usePost = q.length > 600;
+  const param   = '?data=' + encodeURIComponent(q);
+
+  const mkOpts = () => {
+    const timeSig = AbortSignal.timeout(timeoutMs);
+    const signal  = typeof AbortSignal.any === 'function'
+      ? AbortSignal.any([userAbortSig, timeSig])
+      : timeSig;
+    if (usePost) return {
+      method: 'POST',
+      headers: {'Content-Type': 'application/x-www-form-urlencoded'},
+      body:   'data=' + encodeURIComponent(q),
+      signal,
+    };
+    return { signal };
+  };
 
   try {
     const ctls = OVERPASS_ENDPOINTS.map(() => new AbortController());
     const data = await Promise.any(
       OVERPASS_ENDPOINTS.map(async (ep, i) => {
-        const sig = typeof AbortSignal.any === 'function'
-          ? AbortSignal.any([ctls[i].signal, AbortSignal.timeout(timeoutMs)])
-          : AbortSignal.timeout(timeoutMs);
-        const r = await fetch(ep, postOpts(sig));
+        const r = await fetch(usePost ? ep : ep + param, mkOpts());
         if (!r.ok) throw new Error('HTTP ' + r.status);
         ctls.forEach((c, j) => { if (j !== i) c.abort(); });
         return r.json();
@@ -1846,9 +1875,8 @@ async function overpassFetch(q, timeoutMs = OVERPASS_TIMEOUT){
 
     if (data) return data;
 
-    // Fallback: CORS-Proxy via GET
+    // Fallback: CORS-Proxy (GET)
     _overpassHintShow('Overpass – CORS-Proxy…');
-    const param = '?data=' + encodeURIComponent(q);
     try {
       const r = await fetch('https://corsproxy.io/?' + encodeURIComponent(OVERPASS_ENDPOINTS[0] + param),
         {signal: AbortSignal.timeout(timeoutMs)});
@@ -1860,6 +1888,7 @@ async function overpassFetch(q, timeoutMs = OVERPASS_TIMEOUT){
     throw new Error('Overpass nicht erreichbar. Bitte Internetverbindung prüfen.');
   } finally {
     _overpassActive--;
+    _overpassAbortCtl = null;
     _overpassHintHide();
   }
 }
