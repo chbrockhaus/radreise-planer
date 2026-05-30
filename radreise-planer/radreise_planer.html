@@ -259,6 +259,8 @@ header{background:var(--surface);border-bottom:1px solid var(--border);padding:9
 .poi-set-lbl{font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.05em}
 .poi-set-val{font-family:'DM Mono',monospace;font-size:22px;font-weight:700;color:var(--accent);text-align:center;line-height:1}
 .poi-set-sub{font-size:9px;color:var(--muted);text-align:center}
+.poi-set-current{font-size:10px;color:var(--muted);text-align:center;padding:2px 0;border-top:1px solid var(--border);margin-top:2px}
+.poi-set-current span{color:var(--text)}
 #poiKmSlider{width:100%;accent-color:var(--accent);cursor:pointer;margin:2px 0}
 /* ── Feature 9: Mobile / Responsive ── */
 .sb-handle{display:none;justify-content:center;align-items:center;padding:10px 0 6px;cursor:pointer;flex-shrink:0;user-select:none}
@@ -374,10 +376,11 @@ header{background:var(--surface);border-bottom:1px solid var(--border);padding:9
     <!-- POI-Einstellungen -->
     <div id="poiSettingsPanel">
       <div class="poi-set-lbl">POIs laden bis</div>
-      <div class="poi-set-val" id="poiKmLabel">25 km</div>
-      <input type="range" min="1" max="100" step="1" id="poiKmSlider"
+      <div class="poi-set-val" id="poiKmLabel">100 km</div>
+      <input type="range" min="5" max="500" step="5" id="poiKmSlider"
         oninput="setPoiMaxKm(+this.value)">
-      <div class="poi-set-sub">sichtbarer Kartenausschnitt</div>
+      <div class="poi-set-sub">Schwelle: sichtbarer N-S-Ausschnitt</div>
+      <div class="poi-set-current">Karte zeigt: <span id="poiCurrentKm">–</span></div>
     </div>
     <!-- Höhenprofil -->
     <div id="elevProfile">
@@ -730,6 +733,7 @@ function initMap() {
   leafletMap.on('moveend zoomend', () => {
     if (_epVisible) _scheduleElevProfile();
     if (_activePois.size > 0) _schedulePoiRefresh();
+    _updatePoiCurrentKm();
   });
 
   buildMainRouteLayer();
@@ -3700,7 +3704,7 @@ const _poiCache   = {};
 let   _poiTimer   = null;
 
 // ── POI Zoom-Schwelle ─────────────────────────────────────────────────────────
-let _poiMaxKm = parseInt(localStorage.getItem('poiMaxKm') || '25');
+let _poiMaxKm = parseInt(localStorage.getItem('poiMaxKm') || '100');
 
 function _mapVisibleKm() {
   if (!leafletMap) return 9999;
@@ -3708,7 +3712,15 @@ function _mapVisibleKm() {
   return (b.getNorth() - b.getSouth()) * 111;
 }
 
+function _updatePoiCurrentKm() {
+  const el = document.getElementById('poiCurrentKm');
+  if (!el) return;
+  const km = _mapVisibleKm();
+  el.textContent = km < 1 ? '< 1 km' : Math.round(km) + ' km';
+}
+
 function togglePoiSettings() {
+  _updatePoiCurrentKm();
   document.getElementById('poiSettingsPanel')?.classList.toggle('open');
 }
 
@@ -3753,9 +3765,14 @@ function _schedulePoiRefresh(delay = 700) {
 async function _fetchPoiCat(id) {
   const cat = POI_CATS.find(c => c.id === id);
   if (!cat || !leafletMap) return;
-  if (_mapVisibleKm() > _poiMaxKm) {
-    _poiLayers[id]?.clearLayers(); return;
+  const _visKm = Math.round(_mapVisibleKm());
+  if (_visKm > _poiMaxKm) {
+    _poiLayers[id]?.clearLayers();
+    _overpassHintShow(`📍 Reinzoomen — zeigt ${_visKm} km, Schwelle ${_poiMaxKm} km`);
+    setTimeout(_overpassHintHide, 2500);
+    return;
   }
+  _overpassHintHide();
   if (!_poiLayers[id]) _poiLayers[id] = L.layerGroup().addTo(leafletMap);
 
   const b = leafletMap.getBounds();
