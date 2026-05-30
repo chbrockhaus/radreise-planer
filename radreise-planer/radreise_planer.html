@@ -1531,7 +1531,8 @@ const OVERPASS_ENDPOINTS=[
   'https://overpass.kumi.systems/api/interpreter',
   'https://overpass.private.coffee/api/interpreter'
 ];
-const OVERPASS_TIMEOUT = 30000; // ms pro Versuch (30s – Server-Query-Timeout ist 25-30s)
+const OVERPASS_TIMEOUT       = 30000;
+const OVERPASS_TIMEOUT_ROUTE = 75000;
 
 // ── Höhenprofil ──────────────────────────────────────────────────────────────
 const EP_SLOPE_SCALE = [
@@ -1819,10 +1820,9 @@ function _overpassHintHide() {
   if (el) el.classList.remove('visible');
 }
 
-async function overpassFetch(q){
+async function overpassFetch(q, timeoutMs = OVERPASS_TIMEOUT){
   _overpassActive++;
   _overpassHintShow('OSM-Anfrage läuft…');
-  // POST statt GET – verhindert URL-Längen-Limit bei langen around-Abfragen (Route-Modus)
   const postOpts = (sig) => ({
     method:  'POST',
     headers: {'Content-Type': 'application/x-www-form-urlencoded'},
@@ -1835,8 +1835,8 @@ async function overpassFetch(q){
     const data = await Promise.any(
       OVERPASS_ENDPOINTS.map(async (ep, i) => {
         const sig = typeof AbortSignal.any === 'function'
-          ? AbortSignal.any([ctls[i].signal, AbortSignal.timeout(OVERPASS_TIMEOUT)])
-          : AbortSignal.timeout(OVERPASS_TIMEOUT);
+          ? AbortSignal.any([ctls[i].signal, AbortSignal.timeout(timeoutMs)])
+          : AbortSignal.timeout(timeoutMs);
         const r = await fetch(ep, postOpts(sig));
         if (!r.ok) throw new Error('HTTP ' + r.status);
         ctls.forEach((c, j) => { if (j !== i) c.abort(); });
@@ -1851,7 +1851,7 @@ async function overpassFetch(q){
     const param = '?data=' + encodeURIComponent(q);
     try {
       const r = await fetch('https://corsproxy.io/?' + encodeURIComponent(OVERPASS_ENDPOINTS[0] + param),
-        {signal: AbortSignal.timeout(OVERPASS_TIMEOUT)});
+        {signal: AbortSignal.timeout(timeoutMs)});
       if (r.ok) return await r.json();
     } catch {}
 
@@ -3922,17 +3922,23 @@ async function _fetchPoiCatRoute(id, cat) {
 
   try {
     let elements = _poiCache[ckey];
-    if (!elements) {
-      const step  = Math.max(1, Math.floor(ROUTE_PTS.length / 250));
+    if (elements === undefined) {
+      const step  = Math.max(1, Math.floor(ROUTE_PTS.length / 100));
       const pts   = ROUTE_PTS.filter((_, i) => i % step === 0);
       const arnd  = `around:${_poiRouteKm * 1000},${pts.map(p => `${p[0]},${p[1]}`).join(',')}`;
-      const q = `[out:json][timeout:60];${cat.query(arnd)}${outClause}`;
-      const data = await overpassFetch(q);
-      elements = data.elements || [];
+      const q = `[out:json][timeout:70];${cat.query(arnd)}${outClause}`;
+      const data = await overpassFetch(q, OVERPASS_TIMEOUT_ROUTE);
+      elements = data?.elements || [];
       _poiCache[ckey] = elements;
     }
     _renderPoiMarkers(id, cat, elements, 'var(--green,#28c76a)');
-  } catch(err) { console.warn('POI route fetch:', err); }
+    if (elements.length === 0)
+      _overpassHintShow(`📍 ${cat.label}: nichts innerhalb ${_poiRouteKm} km der Route gefunden`);
+  } catch(err) {
+    console.warn('POI route fetch:', err);
+    _overpassHintShow('⚠ Strecken-POI-Abfrage fehlgeschlagen — Timeout oder Netzwerk?');
+    setTimeout(_overpassHintHide, 4000);
+  }
 }
 
 function _shelterPopupHtml(t, lat, lon) {
