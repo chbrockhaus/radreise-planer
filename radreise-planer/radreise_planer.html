@@ -3812,19 +3812,24 @@ function _updatePoiKmBtns() {
   document.querySelectorAll('.poi-mode-btn').forEach(b => b.classList.toggle('active', b.dataset.mode === _poiMode));
 }
 
+function _resetPoiCat(id) {
+  _poiLayers[id]?.clearLayers();
+  delete _poiSeenIds[id];
+  Object.keys(_poiCache).forEach(k => { if (k.startsWith(`map|${id}|`) || k.startsWith(`route|${id}|`)) delete _poiCache[k]; });
+}
+
 function setPoiMaxKm(km) {
   _poiMaxKm = km;
   localStorage.setItem('poiMaxKm', km);
   _updatePoiKmBtns();
-  _activePois.forEach(id => _fetchPoiCat(id));
+  _activePois.forEach(id => { _resetPoiCat(id); _fetchPoiCat(id); });
 }
 
 function setPoiRouteKm(km) {
   _poiRouteKm = km;
   localStorage.setItem('poiRouteKm', km);
-  Object.keys(_poiCache).forEach(k => { if (k.startsWith('route|')) delete _poiCache[k]; });
   _updatePoiKmBtns();
-  _activePois.forEach(id => _fetchPoiCat(id));
+  _activePois.forEach(id => { _resetPoiCat(id); _fetchPoiCat(id); });
 }
 
 function setPoiMode(mode) {
@@ -3833,7 +3838,7 @@ function setPoiMode(mode) {
   document.getElementById('poiMapControls').style.display   = mode === 'map'   ? '' : 'none';
   document.getElementById('poiRouteControls').style.display = mode === 'route' ? '' : 'none';
   _updatePoiKmBtns();
-  _activePois.forEach(id => { _poiLayers[id]?.clearLayers(); _fetchPoiCat(id); });
+  _activePois.forEach(id => { _resetPoiCat(id); _fetchPoiCat(id); });
 }
 
 function _initPoiSettings() {
@@ -3852,7 +3857,7 @@ function togglePoiPanel() {
 function togglePoiCat(id) {
   if (_activePois.has(id)) {
     _activePois.delete(id);
-    _poiLayers[id]?.clearLayers();
+    _resetPoiCat(id);
   } else {
     _activePois.add(id);
     _fetchPoiCat(id);
@@ -3865,10 +3870,15 @@ function _schedulePoiRefresh(delay = 700) {
   _poiTimer = setTimeout(() => { _activePois.forEach(id => _fetchPoiCat(id)); }, delay);
 }
 
+const _poiSeenIds = {};
+
 function _renderPoiMarkers(id, cat, elements, borderColor) {
   if (!_poiLayers[id]) _poiLayers[id] = L.layerGroup().addTo(leafletMap);
-  _poiLayers[id].clearLayers();
+  if (!_poiSeenIds[id]) _poiSeenIds[id] = new Set();
   elements.forEach(el => {
+    const elKey = `${el.type || 'n'}${el.id}`;
+    if (_poiSeenIds[id].has(elKey)) return;
+    _poiSeenIds[id].add(elKey);
     const lat = el.lat ?? el.center?.lat;
     const lon = el.lon ?? el.center?.lon;
     if (!lat || !lon) return;
