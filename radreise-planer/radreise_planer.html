@@ -243,6 +243,33 @@ header{background:var(--surface);border-bottom:1px solid var(--border);padding:9
 .reroute-apply:hover:not(:disabled){opacity:.85}
 .reroute-apply:disabled{opacity:.35;cursor:not-allowed}
 .reroute-cancel{background:transparent;color:var(--muted);border:1px solid var(--border);border-radius:4px;padding:5px 10px;cursor:pointer;font-size:11px;font-family:'DM Sans',sans-serif}
+/* ── Feature 1: Etappenname inline editierbar ── */
+.stage-name-inp{background:none;border:none;border-bottom:1px solid transparent;color:var(--accent);font-family:'DM Mono',monospace;font-size:11px;font-weight:500;min-width:50px;max-width:150px;padding:0 2px;outline:none;transition:border-color .15s;vertical-align:baseline;cursor:text}
+.stage-name-inp:hover,.stage-name-inp:focus{border-bottom-color:var(--accent)}
+.stage-name-inp::placeholder{color:var(--muted);opacity:.55;font-style:italic}
+/* ── Feature 4: POI-Panel ── */
+#poiPanel{position:absolute;top:12px;right:12px;display:flex;flex-direction:column;gap:4px;z-index:1000}
+.poi-btn{width:32px;height:32px;background:rgba(24,28,36,.9);border:1px solid var(--border);border-radius:5px;cursor:pointer;font-size:16px;display:flex;align-items:center;justify-content:center;transition:background .15s}
+.poi-btn:hover{background:var(--surface2)}
+.poi-btn.poi-active{background:rgba(61,142,255,.22);border-color:var(--accent)}
+#poiCatBtns{display:none;flex-direction:column;gap:4px}
+#poiCatBtns.open{display:flex}
+/* ── Feature 9: Mobile / Responsive ── */
+.sb-handle{display:none;justify-content:center;align-items:center;padding:10px 0 6px;cursor:pointer;flex-shrink:0;user-select:none}
+.sb-handle::before{content:'';width:40px;height:4px;background:var(--border);border-radius:2px}
+@media(max-width:700px){
+  header{padding:6px 12px;gap:10px}
+  .stats,.hdr-btn[onclick*="exportAllGPX"]{display:none}
+  .hdr-btn{padding:5px 9px;font-size:10px}
+  .main{position:relative;flex-direction:row}
+  #mapWrap{position:absolute;inset:0;z-index:1}
+  .sidebar{position:fixed!important;bottom:0;left:0;right:0;width:100%!important;height:58vh;z-index:2000;border-right:none!important;border-top:2px solid var(--accent);border-radius:14px 14px 0 0;transform:translateY(calc(100% - 44px));transition:transform .3s ease;overflow:hidden}
+  .sidebar.mobile-open{transform:translateY(0)}
+  .main.sb-hidden .sidebar{transform:translateY(100%)}
+  .sb-handle{display:flex}
+  .sb-collapse-btn{display:none}
+  #sbExpandBtn{display:none!important}
+}
 </style>
 <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
 <link rel="stylesheet" href="https://unpkg.com/leaflet-editable@1.2.0/src/Leaflet.Editable.css">
@@ -262,6 +289,7 @@ header{background:var(--surface);border-bottom:1px solid var(--border);padding:9
 </header>
 <div class="main">
   <div class="sidebar">
+    <div class="sb-handle" onclick="toggleMobileSidebar()" title="Sidebar auf-/zuklappen"></div>
     <div class="sb-head">
       <h2>Etappen &amp; Camping</h2>
       <div style="display:flex;align-items:center;gap:4px;margin-left:auto;margin-right:8px" title="Etappenanzahl anpassen">
@@ -322,6 +350,17 @@ header{background:var(--surface);border-bottom:1px solid var(--border);padding:9
       <button class="map-btn" id="layerBtn" onclick="switchTileLayer()" title="Karte wechseln" style="font-size:11px;font-weight:700">🗺</button>
       <button class="map-btn" id="campOsmBtn" onclick="toggleCampOsmLayer()" title="Campingplätze aus OSM einblenden" style="font-size:14px">⛺</button>
       <button class="map-btn" id="elevProfileBtn" onclick="toggleElevProfile()" title="Höhenprofil ein-/ausblenden" style="font-size:13px">⛰</button>
+    </div>
+    <!-- POI-Panel (Feature 4) -->
+    <div id="poiPanel">
+      <button class="poi-btn" onclick="togglePoiPanel()" title="POIs auf der Karte" style="font-size:13px;font-weight:700">📍</button>
+      <div id="poiCatBtns">
+        <button class="poi-btn" data-cat="supermarket" onclick="togglePoiCat('supermarket')" title="Supermärkte">🛒</button>
+        <button class="poi-btn" data-cat="bicycle"     onclick="togglePoiCat('bicycle')"     title="Fahrradläden">🚲</button>
+        <button class="poi-btn" data-cat="water"       onclick="togglePoiCat('water')"       title="Trinkwasser">💧</button>
+        <button class="poi-btn" data-cat="pharmacy"    onclick="togglePoiCat('pharmacy')"    title="Apotheken">💊</button>
+        <button class="poi-btn" data-cat="food"        onclick="togglePoiCat('food')"        title="Restaurant / Café">🍽️</button>
+      </div>
     </div>
     <!-- Höhenprofil -->
     <div id="elevProfile">
@@ -677,6 +716,7 @@ function initMap() {
   leafletMap.on('moveend zoomend', () => {
     if (_campOsmEnabled) _scheduleCampOsm();
     if (_epVisible) _scheduleElevProfile();
+    if (_activePois.size > 0) _schedulePoiRefresh();
   });
 
   buildMainRouteLayer();
@@ -1307,7 +1347,13 @@ function render(){
     }
     div.innerHTML=`
       <div class="sh">
-        <span class="sn">ETAPPE ${i+1} · ${STAGE_ENDS[i]?.name || ''}</span>
+        <span class="sn">ETAPPE ${i+1} · <input class="stage-name-inp"
+          value="${(STAGE_ENDS[i]?.name||'').replace(/"/g,'&quot;')}"
+          placeholder="Name…"
+          onclick="event.stopPropagation()"
+          onkeydown="event.stopPropagation()"
+          oninput="if(STAGE_ENDS[${i}])STAGE_ENDS[${i}].name=this.value"
+        ></span>
         <span class="sk">${Math.round(stageStartKm(i))}–${Math.round(stageEndKm(i))} km</span>
       </div>
       <div class="adj">
@@ -3609,6 +3655,103 @@ async function redoRouteEdit() {
 }
 
 // ── OSM Campingplatz-Overlay ──────────────────────────────────────────────────
+// ── Feature 9: Mobile Sidebar ────────────────────────────────────────────────
+function toggleMobileSidebar() {
+  document.querySelector('.sidebar').classList.toggle('mobile-open');
+}
+
+// ── Feature 4: POI-Suche ─────────────────────────────────────────────────────
+const POI_CATS = [
+  { id:'supermarket', icon:'🛒', label:'Supermarkt',
+    query: b => `node["shop"~"supermarket|grocery|convenience"](${b});` },
+  { id:'bicycle',     icon:'🚲', label:'Fahrrad',
+    query: b => `(node["shop"="bicycle"](${b});node["amenity"="bicycle_repair_station"](${b}););` },
+  { id:'water',       icon:'💧', label:'Trinkwasser',
+    query: b => `(node["amenity"="drinking_water"](${b});node["amenity"="water_point"](${b}););` },
+  { id:'pharmacy',    icon:'💊', label:'Apotheke',
+    query: b => `node["amenity"="pharmacy"](${b});` },
+  { id:'food',        icon:'🍽️', label:'Restaurant/Café',
+    query: b => `(node["amenity"~"restaurant|pub|cafe|fast_food|biergarten"](${b}););` },
+];
+const _poiLayers  = {};
+const _activePois = new Set();
+const _poiCache   = {};
+let   _poiTimer   = null;
+
+function togglePoiPanel() {
+  document.getElementById('poiCatBtns')?.classList.toggle('open');
+}
+
+function togglePoiCat(id) {
+  if (_activePois.has(id)) {
+    _activePois.delete(id);
+    _poiLayers[id]?.clearLayers();
+  } else {
+    _activePois.add(id);
+    _fetchPoiCat(id);
+  }
+  document.querySelector(`.poi-btn[data-cat="${id}"]`)?.classList.toggle('poi-active', _activePois.has(id));
+}
+
+function _schedulePoiRefresh(delay = 700) {
+  clearTimeout(_poiTimer);
+  _poiTimer = setTimeout(() => { _activePois.forEach(id => _fetchPoiCat(id)); }, delay);
+}
+
+async function _fetchPoiCat(id) {
+  const cat = POI_CATS.find(c => c.id === id);
+  if (!cat || !leafletMap) return;
+  if (!_poiLayers[id]) _poiLayers[id] = L.layerGroup().addTo(leafletMap);
+
+  const b = leafletMap.getBounds();
+  const g = 0.05;
+  const s = (Math.floor(b.getSouth()/g)*g).toFixed(4);
+  const w = (Math.floor(b.getWest() /g)*g).toFixed(4);
+  const n = (Math.ceil( b.getNorth()/g)*g).toFixed(4);
+  const e = (Math.ceil( b.getEast() /g)*g).toFixed(4);
+  const bbox = `${s},${w},${n},${e}`;
+  const ckey = `${id}|${bbox}`;
+
+  try {
+    let elements = _poiCache[ckey];
+    if (!elements) {
+      const q = `[out:json][timeout:20];${cat.query(bbox)}out body;`;
+      const data = await overpassFetch(q);
+      elements = data.elements || [];
+      _poiCache[ckey] = elements;
+      const keys = Object.keys(_poiCache);
+      if (keys.length > 120) delete _poiCache[keys[0]];
+    }
+    _poiLayers[id].clearLayers();
+    elements.forEach(el => {
+      const lat = el.lat ?? el.center?.lat;
+      const lon = el.lon ?? el.center?.lon;
+      if (!lat || !lon) return;
+      const t = el.tags || {};
+      const icon = L.divIcon({
+        className: '',
+        html: `<div style="width:26px;height:26px;background:rgba(24,28,36,.92);border:2px solid rgba(255,255,255,.55);border-radius:6px;display:flex;align-items:center;justify-content:center;font-size:14px;box-shadow:0 2px 6px rgba(0,0,0,.5)">${cat.icon}</div>`,
+        iconSize: [26,26], iconAnchor: [13,13]
+      });
+      const m = L.marker([lat, lon], { icon, zIndexOffset: 250 });
+      const name    = t.name || cat.label;
+      const addr    = [t['addr:street'], t['addr:housenumber'], t['addr:city']].filter(Boolean).join(' ');
+      const phone   = t.phone   || t['contact:phone']   || '';
+      const website = t.website || t['contact:website'] || '';
+      const hours   = t['opening_hours'] || '';
+      m.bindPopup(`<div class="co-inner">
+        <div class="co-title">${name}</div>
+        ${addr    ? `<div class="co-row">📍 ${addr}</div>` : ''}
+        ${hours   ? `<div class="co-row">🕐 ${hours}</div>` : ''}
+        ${phone   ? `<div class="co-row">📞 <a href="tel:${phone}">${phone}</a></div>` : ''}
+        ${website ? `<div class="co-row">🌐 <a href="${website}" target="_blank">${website.replace(/^https?:\/\//,'').slice(0,35)}</a></div>` : ''}
+        <div class="co-osm-link"><a href="https://www.openstreetmap.org/node/${el.id}" target="_blank">OSM</a></div>
+      </div>`, { maxWidth:280, className:'co-popup' });
+      _poiLayers[id].addLayer(m);
+    });
+  } catch(err) { console.warn('POI fetch:', err); }
+}
+
 let _campOsmLayerGroup = null;
 let _campOsmEnabled    = false;
 let _campOsmTimer      = null;
