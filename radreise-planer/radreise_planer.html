@@ -254,6 +254,12 @@ header{background:var(--surface);border-bottom:1px solid var(--border);padding:9
 .poi-btn.poi-active{background:rgba(61,142,255,.22);border-color:var(--accent)}
 #poiCatBtns{display:none;flex-direction:column;gap:4px}
 #poiCatBtns.open{display:flex}
+#poiSettingsPanel{position:absolute;top:12px;right:52px;background:rgba(18,22,32,.97);border:1px solid var(--border);border-radius:8px;padding:10px 12px;width:165px;z-index:1002;display:none;flex-direction:column;gap:6px;box-shadow:0 4px 16px rgba(0,0,0,.5)}
+#poiSettingsPanel.open{display:flex}
+.poi-set-lbl{font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.05em}
+.poi-set-val{font-family:'DM Mono',monospace;font-size:22px;font-weight:700;color:var(--accent);text-align:center;line-height:1}
+.poi-set-sub{font-size:9px;color:var(--muted);text-align:center}
+#poiKmSlider{width:100%;accent-color:var(--accent);cursor:pointer;margin:2px 0}
 /* ── Feature 9: Mobile / Responsive ── */
 .sb-handle{display:none;justify-content:center;align-items:center;padding:10px 0 6px;cursor:pointer;flex-shrink:0;user-select:none}
 .sb-handle::before{content:'';width:40px;height:4px;background:var(--border);border-radius:2px}
@@ -362,7 +368,16 @@ header{background:var(--surface);border-bottom:1px solid var(--border);padding:9
         <button class="poi-btn" data-cat="bakery"      onclick="togglePoiCat('bakery')"      title="Bäcker">🥐</button>
         <button class="poi-btn" data-cat="campsite"    onclick="togglePoiCat('campsite')"    title="Campingplätze">⛺</button>
         <button class="poi-btn" data-cat="shelter"     onclick="togglePoiCat('shelter')"     title="Schutzhütten &amp; Shelter">🛖</button>
+        <button class="poi-btn" onclick="togglePoiSettings()" title="Zoom-Schwelle einstellen" style="font-size:13px">⚙️</button>
       </div>
+    </div>
+    <!-- POI-Einstellungen -->
+    <div id="poiSettingsPanel">
+      <div class="poi-set-lbl">POIs laden bis</div>
+      <div class="poi-set-val" id="poiKmLabel">25 km</div>
+      <input type="range" min="1" max="100" step="1" id="poiKmSlider"
+        oninput="setPoiMaxKm(+this.value)">
+      <div class="poi-set-sub">sichtbarer Kartenausschnitt</div>
     </div>
     <!-- Höhenprofil -->
     <div id="elevProfile">
@@ -3670,11 +3685,11 @@ const POI_CATS = [
     query: b => `node["amenity"="pharmacy"](${b});` },
   { id:'bakery',      icon:'🥐', label:'Bäcker',
     query: b => `node["shop"="bakery"](${b});` },
-  { id:'campsite',    icon:'⛺', label:'Campingplätze', minZoom: 11,
+  { id:'campsite',    icon:'⛺', label:'Campingplätze',
     outClause: 'out center tags;',
     query: b => `(node["tourism"="camp_site"](${b});way["tourism"="camp_site"](${b});node["tourism"="caravan_site"](${b}););`,
     renderPopup: (t, lat, lon) => _campOsmPopupHtml(t, lat, lon) },
-  { id:'shelter',     icon:'🛖', label:'Schutzhütten / Shelter', minZoom: 9,
+  { id:'shelter',     icon:'🛖', label:'Schutzhütten / Shelter',
     outClause: 'out center tags;',
     query: b => `(node["tourism"~"alpine_hut|wilderness_hut"](${b});way["tourism"~"alpine_hut|wilderness_hut"](${b});node["amenity"="shelter"](${b});way["amenity"="shelter"](${b}););`,
     renderPopup: (t, lat, lon) => _shelterPopupHtml(t, lat, lon) },
@@ -3684,8 +3699,39 @@ const _activePois = new Set();
 const _poiCache   = {};
 let   _poiTimer   = null;
 
+// ── POI Zoom-Schwelle ─────────────────────────────────────────────────────────
+let _poiMaxKm = parseInt(localStorage.getItem('poiMaxKm') || '25');
+
+function _mapVisibleKm() {
+  if (!leafletMap) return 9999;
+  const b = leafletMap.getBounds();
+  return (b.getNorth() - b.getSouth()) * 111;
+}
+
+function togglePoiSettings() {
+  document.getElementById('poiSettingsPanel')?.classList.toggle('open');
+}
+
+function setPoiMaxKm(km) {
+  _poiMaxKm = km;
+  const lbl = document.getElementById('poiKmLabel');
+  if (lbl) lbl.textContent = km + ' km';
+  localStorage.setItem('poiMaxKm', km);
+  _activePois.forEach(id => _fetchPoiCat(id));
+}
+
+function _initPoiSettings() {
+  const slider = document.getElementById('poiKmSlider');
+  const lbl    = document.getElementById('poiKmLabel');
+  if (slider) slider.value = _poiMaxKm;
+  if (lbl)    lbl.textContent = _poiMaxKm + ' km';
+}
+
 function togglePoiPanel() {
   document.getElementById('poiCatBtns')?.classList.toggle('open');
+  if (!document.getElementById('poiCatBtns')?.classList.contains('open')) {
+    document.getElementById('poiSettingsPanel')?.classList.remove('open');
+  }
 }
 
 function togglePoiCat(id) {
@@ -3707,7 +3753,7 @@ function _schedulePoiRefresh(delay = 700) {
 async function _fetchPoiCat(id) {
   const cat = POI_CATS.find(c => c.id === id);
   if (!cat || !leafletMap) return;
-  if (cat.minZoom && leafletMap.getZoom() < cat.minZoom) {
+  if (_mapVisibleKm() > _poiMaxKm) {
     _poiLayers[id]?.clearLayers(); return;
   }
   if (!_poiLayers[id]) _poiLayers[id] = L.layerGroup().addTo(leafletMap);
@@ -3843,6 +3889,7 @@ function _campOsmPopupHtml(t, lat, lon) {
 
 Promise.all([wsInit(), loadRoute(), loadManualCamps()]).then(async () => {
   initMap();
+  _initPoiSettings();
   await loadTargets();   // after loadRoute so NUM_STAGES is correct
   drawCustomRoutes(); render();
   checkSegmentRefresh();  // Hinweis anzeigen wenn Kacheln frisch aktualisiert wurden
