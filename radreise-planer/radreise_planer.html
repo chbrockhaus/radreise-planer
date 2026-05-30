@@ -359,7 +359,7 @@ header{background:var(--surface);border-bottom:1px solid var(--border);padding:9
         <button class="poi-btn" data-cat="bicycle"     onclick="togglePoiCat('bicycle')"     title="Fahrradläden">🚲</button>
         <button class="poi-btn" data-cat="water"       onclick="togglePoiCat('water')"       title="Trinkwasser">💧</button>
         <button class="poi-btn" data-cat="pharmacy"    onclick="togglePoiCat('pharmacy')"    title="Apotheken">💊</button>
-        <button class="poi-btn" data-cat="food"        onclick="togglePoiCat('food')"        title="Restaurant / Café">🍽️</button>
+        <button class="poi-btn" data-cat="bakery"      onclick="togglePoiCat('bakery')"      title="Bäcker">🥐</button>
       </div>
     </div>
     <!-- Höhenprofil -->
@@ -3670,8 +3670,8 @@ const POI_CATS = [
     query: b => `(node["amenity"="drinking_water"](${b});node["amenity"="water_point"](${b}););` },
   { id:'pharmacy',    icon:'💊', label:'Apotheke',
     query: b => `node["amenity"="pharmacy"](${b});` },
-  { id:'food',        icon:'🍽️', label:'Restaurant/Café',
-    query: b => `(node["amenity"~"restaurant|pub|cafe|fast_food|biergarten"](${b}););` },
+  { id:'bakery',      icon:'🥐', label:'Bäcker',
+    query: b => `node["shop"="bakery"](${b});` },
 ];
 const _poiLayers  = {};
 const _activePois = new Set();
