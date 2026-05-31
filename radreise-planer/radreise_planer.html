@@ -2917,6 +2917,13 @@ function rebuildPlanRoutePts() {
   planPolyline = planRoutePts.length >= 2
     ? L.polyline(planRoutePts, {color:'#3d8eff',weight:3,opacity:0.85}).addTo(leafletMap)
     : null;
+  // Nach jedem neuen Segment auf den letzten Abschnitt zoomen
+  if (planPolyline && leafletMap && planSegments.length > 0) {
+    const lastSeg = planSegments[planSegments.length - 1];
+    if (lastSeg && lastSeg.length >= 2) {
+      leafletMap.fitBounds(L.polyline(lastSeg).getBounds(), { padding: [80, 80], maxZoom: 13 });
+    }
+  }
 }
 
 function undoLastPlanWaypoint() {
