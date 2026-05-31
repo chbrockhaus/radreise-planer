@@ -6,6 +6,10 @@ DATA_DIR="/data"
 BROUTER_DIR="/opt/brouter"
 SEGMENTS_DIR="${DATA_DIR}/segments4"
 
+# Zeitstempel-Hilfsfunktion
+ts() { date -u '+%Y-%m-%d %H:%M:%S'; }
+log() { echo "[$(ts)] $*"; }
+
 # Verzeichnisse anlegen
 mkdir -p "${DATA_DIR}/tours" "${SEGMENTS_DIR}"
 
@@ -43,9 +47,9 @@ else
     FORCE_REFRESH="false"
 fi
 
-echo "=== Radreise Planer ==="
-echo "  BRouter-Segmente : ${SEGMENTS}"
-echo "  BRouter-Speicher : ${MEM} MB"
+log "=== Radreise Planer ==="
+log "  BRouter-Segmente : ${SEGMENTS}"
+log "  BRouter-Speicher : ${MEM} MB"
 
 # ── Routing-Daten herunterladen ───────────────────────────────────────────────
 SEGMENT_BASE="https://brouter.de/brouter/segments4"
@@ -53,21 +57,21 @@ REFRESHED_SEGS=""
 
 # Bei force_segment_refresh: vorhandene Kacheln löschen → erzwingt Neudownload
 if [ "${FORCE_REFRESH}" = "true" ]; then
-    echo "  ⚠ force_segment_refresh=true — lösche vorhandene Kacheln für Neudownload"
+    log "  ⚠ force_segment_refresh=true — lösche vorhandene Kacheln für Neudownload"
     rm -f "${SEGMENTS_DIR}"/*.rd5
 fi
 
 for seg in ${SEGMENTS}; do
     FILE="${SEGMENTS_DIR}/${seg}.rd5"
     if [ ! -f "${FILE}" ]; then
-        echo "  Lade Routing-Daten: ${seg}.rd5 (~100 MB) ..."
+        log "  Lade Routing-Daten: ${seg}.rd5 (~100 MB) ..."
         if curl -fsSL --retry 3 -o "${FILE}.tmp" "${SEGMENT_BASE}/${seg}.rd5"; then
             mv "${FILE}.tmp" "${FILE}"
-            echo "  ✓ ${seg}.rd5 heruntergeladen"
+            log "  ✓ ${seg}.rd5 heruntergeladen"
             REFRESHED_SEGS="${REFRESHED_SEGS} ${seg}"
         else
             rm -f "${FILE}.tmp"
-            echo "  ⚠ Konnte ${seg}.rd5 nicht laden — Routing in dieser Region nicht verfügbar"
+            log "  ⚠ Konnte ${seg}.rd5 nicht laden — Routing in dieser Region nicht verfügbar"
         fi
     fi
 done
@@ -79,7 +83,7 @@ if [ "${FORCE_REFRESH}" = "true" ] && [ -n "${REFRESHED_SEGS}" ]; then
 import json, datetime
 segs = '${REFRESHED_SEGS_TRIMMED}'.split()
 data = {
-    'refreshed_at': datetime.datetime.utcnow().strftime('%Y-%m-%dT%H:%M:%SZ'),
+    'refreshed_at': datetime.datetime.now(datetime.timezone.utc).strftime('%Y-%m-%dT%H:%M:%SZ'),
     'segments': segs
 }
 with open('/data/segments_refreshed.json', 'w') as f:
@@ -94,5 +98,5 @@ export BROUTER_DIR="${BROUTER_DIR}"
 export SEGMENTS_DIR="${SEGMENTS_DIR}"
 export BROUTER_MEMORY_MB="${MEM}"
 
-echo "  ✓ Starte Server auf Port 3000 ..."
+log "  ✓ Starte Server auf Port 3000 ..."
 exec python3 /app/server.py

@@ -23,7 +23,7 @@ import datetime
 
 def log(msg: str) -> None:
     """Gibt eine Logzeile mit UTC-Zeitstempel aus."""
-    ts = datetime.datetime.utcnow().strftime('%Y-%m-%d %H:%M:%S')
+    ts = datetime.datetime.now(datetime.timezone.utc).strftime('%Y-%m-%d %H:%M:%S')
     print(f'[{ts}] {msg}', flush=True)
 
 # ── Konfiguration ─────────────────────────────────────────────────────────────
@@ -157,8 +157,8 @@ def list_tours():
 
 def save_tour(data):
     os.makedirs(TOURS_DIR, exist_ok=True)
-    now = datetime.datetime.utcnow().strftime('%Y-%m-%dT%H:%M:%SZ')
-    tid = _safe_id(data.get('id') or '') or str(int(datetime.datetime.utcnow().timestamp() * 1000))
+    now = datetime.datetime.now(datetime.timezone.utc).strftime('%Y-%m-%dT%H:%M:%SZ')
+    tid = _safe_id(data.get('id') or '') or str(int(datetime.datetime.now(datetime.timezone.utc).timestamp() * 1000))
     data['id'] = tid
     if not data.get('created'):
         data['created'] = now
