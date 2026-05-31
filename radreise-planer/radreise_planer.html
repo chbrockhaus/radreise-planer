@@ -2863,31 +2863,32 @@ async function planModeClick(e) {
       const lastM = planMarkers.pop();
       if (lastM) leafletMap.removeLayer(lastM);
 
-      // Welches BRouter-Segment wird für Start und Ziel benötigt?
       const segFrom = latlonToSegment(from[0], from[1]);
       const segTo   = latlonToSegment(to[0],   to[1]);
       const segsNeeded = [...new Set([segFrom, segTo])];
-
       const missing = [];
       for (const seg of segsNeeded) {
         try {
           const s = await fetch(`/api/segment-status/${seg}`).then(r => r.json());
           if (s.status !== 'ready') missing.push(seg);
-        } catch { missing.push(seg); }  // API-Fehler → trotzdem als fehlend behandeln
+        } catch { missing.push(seg); }
       }
 
-      const statusEl = document.getElementById('planStatus');
+      const distKm = Math.round(hav(from[0], from[1], to[0], to[1]));
+
+      let toastMsg;
       if (missing.length > 0) {
-        statusEl.textContent = `⚠ Fehlende Routing-Daten: ${missing.join(', ')}`;
-        statusEl.style.color = 'var(--red,#ff4d4d)';
-        const ok = await offerTileDownload(missing[0], to[0], to[1]);
-        if (ok) {
-          statusEl.textContent = `✓ ${missing[0]} heruntergeladen — Wegpunkt erneut setzen`;
-          statusEl.style.color = 'var(--green)';
-        }
+        toastMsg = `⚠ Fehlende Routing-Daten: ${missing.join(', ')}`;
+      } else if (distKm > 300) {
+        toastMsg = `⚠ ${distKm} km zu lang für ein Segment — Zwischenpunkt setzen (z.B. alle 200–300 km)`;
       } else {
-        statusEl.textContent = '⚠ BRouter: Route nicht berechnet — Punkte zu weit entfernt oder Profile prüfen';
-        statusEl.style.color = 'var(--red,#ff4d4d)';
+        toastMsg = '⚠ BRouter: Route nicht berechnet — Profil oder Daten prüfen';
+      }
+      _overpassHintShow(toastMsg, 7000);
+
+      if (missing.length > 0) {
+        const ok = await offerTileDownload(missing[0], to[0], to[1]);
+        if (ok) _overpassHintShow(`✓ ${missing[0]} heruntergeladen — Wegpunkt erneut setzen`, 4000);
       }
     }
     planRouting = false;
