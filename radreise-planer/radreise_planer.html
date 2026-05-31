@@ -2856,10 +2856,23 @@ async function planModeClick(e) {
       const { pts: seg, eles: segEles } = await brouterRoute([from, to]);
       planSegments.push(seg);
       planSegmentEles.push(segEles);
-    } catch {
-      // Straight-line fallback (no elevation data)
-      planSegments.push([from, to]);
-      planSegmentEles.push([]);
+      document.getElementById('planStatus').style.color = '';
+    } catch(err) {
+      // Routing fehlgeschlagen: letzten Wegpunkt wieder entfernen
+      planWaypoints.pop();
+      const lastM = planMarkers.pop();
+      if (lastM) leafletMap.removeLayer(lastM);
+
+      const errStr = String(err?.message || err || '');
+      let hint = '⚠ BRouter: Route nicht berechnet';
+      if (/segment|rd5|data|waypoint/i.test(errStr))
+        hint += ' — Routing-Daten fehlen (Kacheln nachladen)';
+      else if (/timeout/i.test(errStr))
+        hint += ' — Timeout: kürzere Abschnitte wählen';
+      else
+        hint += ' — Punkte näher zusammen setzen oder Routing-Daten prüfen';
+      document.getElementById('planStatus').textContent = hint;
+      document.getElementById('planStatus').style.color = 'var(--red,#ff4d4d)';
     }
     planRouting = false;
     rebuildPlanRoutePts();
