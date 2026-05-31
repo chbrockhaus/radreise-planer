@@ -15,7 +15,8 @@
 *{box-sizing:border-box;margin:0;padding:0}
 body{font-family:'DM Sans',sans-serif;background:var(--bg);color:var(--text);height:100vh;display:flex;flex-direction:column;overflow:hidden}
 header{background:var(--surface);border-bottom:1px solid var(--border);padding:9px 18px;display:flex;align-items:center;gap:20px;flex-shrink:0;flex-wrap:wrap}
-.logo{font-family:'DM Mono',monospace;font-size:12px;color:var(--accent);letter-spacing:.1em;text-transform:uppercase}
+.logo{font-family:'DM Mono',monospace;font-size:12px;color:var(--accent);letter-spacing:.1em;text-transform:uppercase;display:flex;align-items:baseline;gap:7px}
+.logo-ver{font-size:9px;color:var(--muted);letter-spacing:.05em;font-weight:400;opacity:.7}
 .stats{display:flex;gap:16px;flex-wrap:wrap}
 .stat{display:flex;flex-direction:column}
 .sl{font-size:9px;color:var(--muted);text-transform:uppercase;letter-spacing:.06em}
@@ -162,7 +163,11 @@ header{background:var(--surface);border-bottom:1px solid var(--border);padding:9
 .target-btn.remove:hover{background:var(--red);color:#fff}
 .map-btn.active{background:var(--accent);color:#fff}
 .route-status{font-size:10px;color:var(--green);margin-top:3px;display:flex;align-items:center;gap:4px}
-.hdr-btn{font-size:11px;font-weight:600;background:transparent;color:var(--muted);border:1px solid var(--border);border-radius:5px;padding:5px 11px;cursor:pointer;transition:all .2s;font-family:'DM Sans',sans-serif;white-space:nowrap;margin-left:auto}
+.hdr-btn{font-size:11px;font-weight:600;background:transparent;color:var(--muted);border:1px solid var(--border);border-radius:5px;padding:5px 11px;cursor:pointer;transition:all .2s;font-family:'DM Sans',sans-serif;white-space:nowrap}
+.hdr-btn:hover{background:var(--surface2);color:var(--text)}
+.hdr-btn-group{display:flex;gap:0;margin-left:auto;border:1px solid var(--border);border-radius:5px;overflow:hidden}
+.hdr-btn-group .hdr-btn{border:none;border-radius:0;border-right:1px solid var(--border);margin-left:0}
+.hdr-btn-group .hdr-btn:last-child{border-right:none}
 .hdr-btn:hover{background:var(--surface2);color:var(--text)}
 .exp-btn{font-size:10px;background:transparent;color:var(--muted);border:1px solid var(--border);border-radius:4px;padding:3px 8px;cursor:pointer;margin-top:4px;transition:all .2s;font-family:'DM Sans',sans-serif;width:100%;text-align:left}
 .exp-btn:hover{background:var(--surface2);color:var(--text)}
@@ -296,16 +301,18 @@ header{background:var(--surface);border-bottom:1px solid var(--border);padding:9
 </head>
 <body>
 <header>
-  <div class="logo">🚴 Radreise Planer</div>
+  <div class="logo">🚴 Radreise Planer<span class="logo-ver">v1.3.0</span></div>
   <div class="stats">
     <div class="stat"><span class="sl">Route</span><span class="sv" id="hdrRoute" style="color:var(--muted)">–</span></div>
     <div class="stat"><span class="sl">Gesamt</span><span class="sv" id="hdrTotal" style="color:var(--muted)">–</span></div>
     <div class="stat"><span class="sl">Etappen</span><span class="sv" id="hdrStages" style="color:var(--muted)">–</span></div>
     <div class="stat"><span class="sl">Radius</span><span class="sv">≤ 15 km</span></div>
   </div>
-  <button class="hdr-btn" onclick="showTourModal()" title="Neue Tour erstellen oder GPX importieren">+ Neue Tour</button>
-  <button class="hdr-btn" onclick="showTourManager()" title="Touren speichern und laden">💾 Touren</button>
-  <button class="hdr-btn" id="exportBtn" onclick="exportAllGPX()" title="Alle Etappen als GPX exportieren">↓ GPX</button>
+  <div class="hdr-btn-group">
+    <button class="hdr-btn" onclick="showTourModal()" title="Neue Tour erstellen oder GPX importieren">+ Neue Tour</button>
+    <button class="hdr-btn" onclick="showTourManager()" title="Touren speichern und laden">💾 Touren</button>
+  </div>
+  <button class="hdr-btn" id="exportBtn" onclick="exportAllGPX()" title="Alle Etappen als GPX exportieren" style="margin-left:6px">↓ GPX</button>
 </header>
 <div class="main">
   <div class="sidebar">
