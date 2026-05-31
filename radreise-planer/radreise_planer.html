@@ -3084,6 +3084,7 @@ async function saveTourNow() {
     const res = await r.json();
     currentTourId   = res.id;
     currentTourName = name;
+    localStorage.setItem('lastTourId', res.id);
     statusEl.style.color = 'var(--green)'; statusEl.textContent = '✓ Gespeichert';
     await listTours();
   } catch(e) {
@@ -3099,6 +3100,7 @@ async function loadTour(id) {
     const data = await r.json();
     currentTourId   = id;
     currentTourName = data.name || null;
+    localStorage.setItem('lastTourId', id);
     hideTourManager();
     await restoreTourState(data);
   } catch(e) {
@@ -4082,9 +4084,25 @@ function _campOsmPopupHtml(t, lat, lon) {
 Promise.all([wsInit(), loadRoute(), loadManualCamps()]).then(async () => {
   initMap();
   _initPoiSettings();
-  await loadTargets();   // after loadRoute so NUM_STAGES is correct
+  await loadTargets();
   drawCustomRoutes(); render();
-  checkSegmentRefresh();  // Hinweis anzeigen wenn Kacheln frisch aktualisiert wurden
+  checkSegmentRefresh();
+
+  // Letzte Tour automatisch wiederherstellen
+  const lastId = localStorage.getItem('lastTourId');
+  if (lastId) {
+    try {
+      const r = await fetch(`/api/tours/${lastId}`);
+      if (r.ok) {
+        const data = await r.json();
+        currentTourId   = lastId;
+        currentTourName = data.name || null;
+        await restoreTourState(data);
+      } else {
+        localStorage.removeItem('lastTourId'); // Tour existiert nicht mehr
+      }
+    } catch { /* Fehler ignorieren, normaler Start */ }
+  }
 });
 </script>
 </body>
