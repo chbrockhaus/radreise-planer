@@ -2071,7 +2071,7 @@ async function offerTileDownload(segment, lat, lon) {
   });
 }
 
-async function brouterRoute(waypoints, _retry = false) {
+async function brouterRoute(waypoints, _retry = false, _suppressTileOffer = false) {
   const lonlats = waypoints.map(([lat, lon]) => `${lon},${lat}`).join('|');
   const url = `/api/brouter?lonlats=${encodeURIComponent(lonlats)}&profile=${currentProfile}&alternativeidx=0&format=geojson`;
   const r = await fetch(url, { signal: AbortSignal.timeout(30000) });
@@ -2081,8 +2081,8 @@ async function brouterRoute(waypoints, _retry = false) {
   }
   const gj = await r.json();
   if (gj.error) {
-    // Prüfen ob fehlende Kachel der Grund sein könnte — nur beim ersten Versuch
-    if (!_retry && /no.*(route|data|segment)|routing.*missing|waypoint.*data/i.test(gj.error)) {
+    // Prüfen ob fehlende Kachel der Grund sein könnte — außer wenn Plan-Modus den Toast selbst zeigt
+    if (!_retry && !_suppressTileOffer && /no.*(route|data|segment)|routing.*missing|waypoint.*data/i.test(gj.error)) {
       const [lat, lon] = waypoints[0];
       const segment = latlonToSegment(lat, lon);
       // Server fragen ob die Kachel fehlt
@@ -2853,7 +2853,7 @@ async function planModeClick(e) {
     const from = planWaypoints[planWaypoints.length - 2];
     const to   = planWaypoints[planWaypoints.length - 1];
     try {
-      const { pts: seg, eles: segEles } = await brouterRoute([from, to]);
+      const { pts: seg, eles: segEles } = await brouterRoute([from, to], false, true);
       planSegments.push(seg);
       planSegmentEles.push(segEles);
       document.getElementById('planStatus').style.color = '';
@@ -2873,25 +2873,21 @@ async function planModeClick(e) {
         try {
           const s = await fetch(`/api/segment-status/${seg}`).then(r => r.json());
           if (s.status !== 'ready') missing.push(seg);
-        } catch { missing.push(seg + '?'); }
+        } catch { missing.push(seg); }  // API-Fehler → trotzdem als fehlend behandeln
       }
 
-      let hint;
-      if (missing.length > 0) {
-        hint = `⚠ Fehlende Routing-Daten: ${missing.join(', ')} — Kacheln nachladen`;
-      } else {
-        hint = '⚠ BRouter: Route nicht berechnet — Punkte zu weit entfernt?';
-      }
       const statusEl = document.getElementById('planStatus');
-      statusEl.textContent = hint;
-      statusEl.style.color = 'var(--red,#ff4d4d)';
-
-      if (missing.length > 0 && !missing[0].endsWith('?')) {
+      if (missing.length > 0) {
+        statusEl.textContent = `⚠ Fehlende Routing-Daten: ${missing.join(', ')}`;
+        statusEl.style.color = 'var(--red,#ff4d4d)';
         const ok = await offerTileDownload(missing[0], to[0], to[1]);
         if (ok) {
-          statusEl.textContent = '✓ Segment heruntergeladen — Wegpunkt erneut setzen';
+          statusEl.textContent = `✓ ${missing[0]} heruntergeladen — Wegpunkt erneut setzen`;
           statusEl.style.color = 'var(--green)';
         }
+      } else {
+        statusEl.textContent = '⚠ BRouter: Route nicht berechnet — Punkte zu weit entfernt oder Profile prüfen';
+        statusEl.style.color = 'var(--red,#ff4d4d)';
       }
     }
     planRouting = false;
