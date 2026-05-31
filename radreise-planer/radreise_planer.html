@@ -2071,6 +2071,41 @@ async function offerTileDownload(segment, lat, lon) {
   });
 }
 
+const PLAN_MAX_SEG_KM = 250;
+
+async function routeWithAutoSplit(from, to, statusFn) {
+  const dist = hav(from[0], from[1], to[0], to[1]);
+  if (dist <= PLAN_MAX_SEG_KM) {
+    if (statusFn) statusFn(1, 1);
+    return await brouterRoute([from, to], false, true);
+  }
+  const numSegs   = Math.ceil(dist / PLAN_MAX_SEG_KM);
+  const waypoints = [from];
+  for (let i = 1; i < numSegs; i++) {
+    const t = i / numSegs;
+    waypoints.push([
+      from[0] + (to[0] - from[0]) * t,
+      from[1] + (to[1] - from[1]) * t,
+    ]);
+  }
+  waypoints.push(to);
+
+  let allPts  = [];
+  let allEles = [];
+  for (let i = 0; i < waypoints.length - 1; i++) {
+    if (statusFn) statusFn(i + 1, numSegs);
+    const { pts, eles } = await brouterRoute([waypoints[i], waypoints[i + 1]], false, true);
+    if (i === 0) {
+      allPts  = pts;
+      allEles = eles;
+    } else {
+      allPts  = [...allPts,  ...pts.slice(1)];
+      allEles = allEles.length && eles.length ? [...allEles, ...eles.slice(1)] : [];
+    }
+  }
+  return { pts: allPts, eles: allEles };
+}
+
 async function brouterRoute(waypoints, _retry = false, _suppressTileOffer = false) {
   const lonlats = waypoints.map(([lat, lon]) => `${lon},${lat}`).join('|');
   const url = `/api/brouter?lonlats=${encodeURIComponent(lonlats)}&profile=${currentProfile}&alternativeidx=0&format=geojson`;
@@ -2853,10 +2888,14 @@ async function planModeClick(e) {
     const from = planWaypoints[planWaypoints.length - 2];
     const to   = planWaypoints[planWaypoints.length - 1];
     try {
-      const { pts: seg, eles: segEles } = await brouterRoute([from, to], false, true);
+      const { pts: seg, eles: segEles } = await routeWithAutoSplit(from, to,
+        (i, total) => {
+          if (total > 1)
+            document.getElementById('planStatus').textContent = `⏳ Teilsegment ${i}/${total} wird berechnet…`;
+        }
+      );
       planSegments.push(seg);
       planSegmentEles.push(segEles);
-      document.getElementById('planStatus').style.color = '';
     } catch(err) {
       // Routing fehlgeschlagen: letzten Wegpunkt wieder entfernen
       planWaypoints.pop();
@@ -2879,10 +2918,8 @@ async function planModeClick(e) {
       let toastMsg;
       if (missing.length > 0) {
         toastMsg = `⚠ Fehlende Routing-Daten: ${missing.join(', ')}`;
-      } else if (distKm > 300) {
-        toastMsg = `⚠ ${distKm} km zu lang für ein Segment — Zwischenpunkt setzen (z.B. alle 200–300 km)`;
       } else {
-        toastMsg = '⚠ BRouter: Route nicht berechnet — Profil oder Daten prüfen';
+        toastMsg = `⚠ BRouter: Route nicht berechnet (${distKm} km) — Routing-Daten oder Profil prüfen`;
       }
       _overpassHintShow(toastMsg, 7000);
 
