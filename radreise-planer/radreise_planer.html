@@ -1819,19 +1819,23 @@ function abortOverpass() {
   _activePois.forEach(id => _poiLayers[id]?.clearLayers());
 }
 
-function _overpassHintShow(msg) {
+let _overpassInfoTimer = null;
+function _overpassHintShow(msg, autohideMs = 0) {
   const el = document.getElementById('overpassHint');
   if (!el) return;
   const btn = document.getElementById('overpassAbortBtn');
-  if (btn) btn.style.display = _overpassActive > 0 ? '' : 'none';
+  const loading = _overpassActive > 0;
+  if (btn) btn.style.display = loading ? '' : 'none';
   const span = el.querySelector('span.spin') || document.createElement('span');
   span.className = 'spin';
   span.style.cssText = 'width:11px;height:11px;border-width:2px';
   el.textContent = '';
-  if (_overpassActive > 0) el.appendChild(span);
+  if (loading) el.appendChild(span);
   el.append(msg);
   if (btn) el.appendChild(btn);
   el.classList.add('visible');
+  clearTimeout(_overpassInfoTimer);
+  if (autohideMs > 0) _overpassInfoTimer = setTimeout(() => _overpassHintHide(true), autohideMs);
 }
 function _overpassHintHide(force = false) {
   if (!force && _overpassActive > 0) return;
@@ -3920,8 +3924,7 @@ async function _fetchPoiCat(id) {
   const _visKm = Math.round(_mapVisibleKm());
   if (_visKm > _poiMaxKm) {
     _poiLayers[id]?.clearLayers();
-    _overpassHintShow(`📍 Reinzoomen — zeigt ${_visKm} km, Schwelle ${_poiMaxKm} km`);
-    setTimeout(_overpassHintHide, 2500);
+    _overpassHintShow(`📍 Reinzoomen — zeigt ${_visKm} km, Schwelle ${_poiMaxKm} km`, 2500);
     return;
   }
   _overpassHintHide();
@@ -3947,6 +3950,8 @@ async function _fetchPoiCat(id) {
       if (keys.length > 120) delete _poiCache[keys[0]];
     }
     _renderPoiMarkers(id, cat, elements, 'rgba(255,255,255,.55)');
+    if (elements.length === 0)
+      _overpassHintShow(`${cat.icon} ${cat.label}: keine im aktuellen Bereich`, 3500);
   } catch(err) { console.warn('POI fetch:', err); }
 }
 
@@ -3959,16 +3964,14 @@ function _visibleRoutePts() {
 async function _fetchPoiCatRoute(id, cat) {
   if (!ROUTE_PTS || ROUTE_PTS.length < 2) {
     _poiLayers[id]?.clearLayers();
-    _overpassHintShow('📍 Keine Route geladen — GPX importieren');
-    setTimeout(_overpassHintHide, 2500);
+    _overpassHintShow('📍 Keine Route geladen — GPX importieren', 2500);
     return;
   }
 
   const visPts = _visibleRoutePts();
   if (visPts.length < 2) {
     _poiLayers[id]?.clearLayers();
-    _overpassHintShow('📍 Kein Streckenabschnitt im Kartenausschnitt — hereinzoomen');
-    setTimeout(_overpassHintHide, 2000);
+    _overpassHintShow('📍 Kein Streckenabschnitt im Kartenausschnitt — hereinzoomen', 2000);
     return;
   }
 
@@ -3995,10 +3998,11 @@ async function _fetchPoiCatRoute(id, cat) {
       if (keys.length > 150) delete _poiCache[keys[0]];
     }
     _renderPoiMarkers(id, cat, elements, 'var(--green,#28c76a)');
+    if (elements.length === 0)
+      _overpassHintShow(`${cat.icon} ${cat.label}: keine innerhalb ${_poiRouteKm} km der Strecke`, 3500);
   } catch(err) {
     console.warn('POI route fetch:', err);
-    _overpassHintShow('⚠ Strecken-POI-Abfrage fehlgeschlagen');
-    setTimeout(_overpassHintHide, 3000);
+    _overpassHintShow('⚠ Strecken-POI-Abfrage fehlgeschlagen', 3000);
   }
 }
 
