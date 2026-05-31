@@ -2863,16 +2863,36 @@ async function planModeClick(e) {
       const lastM = planMarkers.pop();
       if (lastM) leafletMap.removeLayer(lastM);
 
-      const errStr = String(err?.message || err || '');
-      let hint = '⚠ BRouter: Route nicht berechnet';
-      if (/segment|rd5|data|waypoint/i.test(errStr))
-        hint += ' — Routing-Daten fehlen (Kacheln nachladen)';
-      else if (/timeout/i.test(errStr))
-        hint += ' — Timeout: kürzere Abschnitte wählen';
-      else
-        hint += ' — Punkte näher zusammen setzen oder Routing-Daten prüfen';
-      document.getElementById('planStatus').textContent = hint;
-      document.getElementById('planStatus').style.color = 'var(--red,#ff4d4d)';
+      // Welches BRouter-Segment wird für Start und Ziel benötigt?
+      const segFrom = latlonToSegment(from[0], from[1]);
+      const segTo   = latlonToSegment(to[0],   to[1]);
+      const segsNeeded = [...new Set([segFrom, segTo])];
+
+      const missing = [];
+      for (const seg of segsNeeded) {
+        try {
+          const s = await fetch(`/api/segment-status/${seg}`).then(r => r.json());
+          if (s.status !== 'ready') missing.push(seg);
+        } catch { missing.push(seg + '?'); }
+      }
+
+      let hint;
+      if (missing.length > 0) {
+        hint = `⚠ Fehlende Routing-Daten: ${missing.join(', ')} — Kacheln nachladen`;
+      } else {
+        hint = '⚠ BRouter: Route nicht berechnet — Punkte zu weit entfernt?';
+      }
+      const statusEl = document.getElementById('planStatus');
+      statusEl.textContent = hint;
+      statusEl.style.color = 'var(--red,#ff4d4d)';
+
+      if (missing.length > 0 && !missing[0].endsWith('?')) {
+        const ok = await offerTileDownload(missing[0], to[0], to[1]);
+        if (ok) {
+          statusEl.textContent = '✓ Segment heruntergeladen — Wegpunkt erneut setzen';
+          statusEl.style.color = 'var(--green)';
+        }
+      }
     }
     planRouting = false;
     rebuildPlanRoutePts();
