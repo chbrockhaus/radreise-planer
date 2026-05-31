@@ -4108,11 +4108,19 @@ Promise.all([wsInit(), loadRoute(), loadManualCamps()]).then(async () => {
       const r = await fetch(`/api/tours/${lastId}`);
       if (r.ok) {
         const data = await r.json();
-        currentTourId   = lastId;
-        currentTourName = data.name || null;
-        await restoreTourState(data);
+        const pts = data.route_sampled || [];
+        if (pts.length < 10) {
+          // Ungültige Tour (z.B. nur 2 Punkte durch BRouter-Fallback) — löschen
+          console.warn(`Auto-Load: Tour "${data.name}" hat nur ${pts.length} Routenpunkte — wird gelöscht`);
+          await fetch(`/api/tours/${lastId}`, { method: 'DELETE' }).catch(() => {});
+          localStorage.removeItem('lastTourId');
+        } else {
+          currentTourId   = lastId;
+          currentTourName = data.name || null;
+          await restoreTourState(data);
+        }
       } else {
-        localStorage.removeItem('lastTourId'); // Tour existiert nicht mehr
+        localStorage.removeItem('lastTourId');
       }
     } catch { /* Fehler ignorieren, normaler Start */ }
   }
