@@ -21,6 +21,11 @@ import urllib.request
 import urllib.parse
 import datetime
 
+def log(msg: str) -> None:
+    """Gibt eine Logzeile mit UTC-Zeitstempel aus."""
+    ts = datetime.datetime.utcnow().strftime('%Y-%m-%d %H:%M:%S')
+    print(f'[{ts}] {msg}', flush=True)
+
 # ── Konfiguration ─────────────────────────────────────────────────────────────
 PORT         = int(os.environ.get('PORT', 3000))
 DATA_DIR     = os.environ.get('DATA_DIR',     '/data')
@@ -62,10 +67,10 @@ def _download_segment_bg(segment):
     tmp      = seg_file + '.tmp'
     try:
         url = f'https://brouter.de/brouter/segments4/{segment}.rd5'
-        print(f'  Lade Segment {segment} …', flush=True)
+        log(f'  Lade Segment {segment} …')
         urllib.request.urlretrieve(url, tmp)
         os.rename(tmp, seg_file)
-        print(f'  ✓ {segment}.rd5 heruntergeladen ({os.path.getsize(seg_file)//1024//1024} MB)', flush=True)
+        log(f'  ✓ {segment}.rd5 heruntergeladen ({os.path.getsize(seg_file)//1024//1024} MB)')
         # BRouter neu starten damit er das neue Segment lädt
         if brouter_proc:
             brouter_proc.terminate()
@@ -74,23 +79,23 @@ def _download_segment_bg(segment):
         start_brouter()
         import time; time.sleep(5)   # BRouter braucht ein paar Sekunden zum Starten
         _segment_status[segment] = 'ready'
-        print(f'  ✓ BRouter neu gestartet mit {segment}', flush=True)
+        log(f'  ✓ BRouter neu gestartet mit {segment}')
     except Exception as e:
         if os.path.exists(tmp):
             try: os.remove(tmp)
             except Exception: pass
         _segment_status[segment] = f'error: {e}'
-        print(f'  ✗ Segment {segment} Fehler: {e}', flush=True)
+        log(f'  ✗ Segment {segment} Fehler: {e}')
 
 # ── BRouter ───────────────────────────────────────────────────────────────────
 def start_brouter():
     global brouter_proc
     jar = os.path.join(BROUTER_DIR, 'brouter.jar')
     if not os.path.exists(jar):
-        print(f'  BRouter: brouter.jar nicht gefunden: {jar}', flush=True)
+        log(f'  BRouter: brouter.jar nicht gefunden: {jar}')
         return
     if not os.listdir(SEGMENTS_DIR):
-        print('  BRouter: Keine Routing-Daten in segments4/ — Routing nicht verfügbar', flush=True)
+        log('  BRouter: Keine Routing-Daten in segments4/ — Routing nicht verfügbar')
         return
     cmd = [
         'java', f'-Xmx{BROUTER_MEM}m', '-cp', jar,
@@ -102,9 +107,9 @@ def start_brouter():
         brouter_proc = subprocess.Popen(
             cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL
         )
-        print(f'  BRouter gestartet (PID {brouter_proc.pid}) auf Port {BROUTER_PORT}', flush=True)
+        log(f'  BRouter gestartet (PID {brouter_proc.pid}) auf Port {BROUTER_PORT}')
     except Exception as e:
-        print(f'  BRouter Startfehler: {e}', flush=True)
+        log(f'  BRouter Startfehler: {e}')
 
 # ── Datei-Hilfsfunktionen ─────────────────────────────────────────────────────
 def _load_json(path, default=None):
@@ -483,17 +488,17 @@ if __name__ == '__main__':
 
     start_brouter()
 
-    print('=== Radreise Planer (Docker/HA) ===', flush=True)
-    print(f'  App      : {APP_DIR}', flush=True)
-    print(f'  Daten    : {DATA_DIR}', flush=True)
-    print(f'  Segmente : {SEGMENTS_DIR}', flush=True)
-    print(f'  Port     : {PORT}', flush=True)
+    log('=== Radreise Planer (Docker/HA) ===')
+    log(f'  App      : {APP_DIR}')
+    log(f'  Daten    : {DATA_DIR}')
+    log(f'  Segmente : {SEGMENTS_DIR}')
+    log(f'  Port     : {PORT}')
 
     class ThreadingHTTPServer(socketserver.ThreadingMixIn, http.server.HTTPServer):
         daemon_threads = True  # Threads sterben mit dem Server
 
     srv = ThreadingHTTPServer(('', PORT), Handler)
-    print(f'  ✓ Bereit: http://localhost:{PORT}/', flush=True)
+    log(f'  ✓ Bereit: http://localhost:{PORT}/')
     with srv:
         try:
             srv.serve_forever()
