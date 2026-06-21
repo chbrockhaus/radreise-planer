@@ -32,8 +32,8 @@ COPY radreise_planer.html ./
 COPY run.sh               ./
 RUN chmod +x /app/run.sh
 
-# Eigene BRouter-Profile
-COPY profiles/ /opt/brouter/customprofiles/
+# Eigene BRouter-Profile (in profiles2/ wo BRouter sie sicher findet)
+COPY profiles/ /opt/brouter/profiles2/
 
 EXPOSE 3000
 
