@@ -1946,14 +1946,16 @@ function liveDistKm(si, c) {
 // BROUTER ROUTING
 // ─────────────────────────────────────────────────────────────────────────────
 const BROUTER_PROFILES = [
-  { id: 'trekking',               label: 'Trekking (Standard)' },
-  { id: 'fastbike',               label: 'Fastbike' },
-  { id: 'fastbike-lowtraffic',    label: 'Fastbike (wenig Verkehr)' },
-  { id: 'fastbike-verylowtraffic',label: 'Fastbike (sehr wenig Verkehr)' },
-  { id: 'gravel',                 label: 'Gravel' },
-  { id: 'mtb',                    label: 'MTB' },
-  { id: 'safety',                 label: 'Safety (sicherste Straßen)' },
-  { id: 'shortest',               label: 'Kürzeste Strecke' },
+  { id: 'trekking',                              label: 'Trekking (Standard)' },
+  { id: 'fastbike',                              label: 'Fastbike' },
+  { id: 'fastbike-lowtraffic',                   label: 'Fastbike (wenig Verkehr)' },
+  { id: 'fastbike-verylowtraffic',               label: 'Fastbike (sehr wenig Verkehr)' },
+  { id: 'fastbike-lowtraffic-no-bundesstrasse',  label: 'Fastbike (wenig Verkehr, keine B-Str.)' },
+  { id: 'gravel',                                label: 'Gravel' },
+  { id: 'gravel_no_bundesstrasse',               label: 'Gravel (keine Bundesstraßen)' },
+  { id: 'mtb',                                   label: 'MTB' },
+  { id: 'safety',                                label: 'Safety (sicherste Straßen)' },
+  { id: 'shortest',                              label: 'Kürzeste Strecke' },
 ];
 let currentProfile = 'trekking';
 
