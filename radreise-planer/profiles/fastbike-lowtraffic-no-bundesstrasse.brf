@@ -231,9 +231,7 @@ assign town_penalty
 #   - Option AN + kein Radweg:      1.2 (unverändert – kein Radweg = ohnehin selten)
 #
 assign primary_costfactor
-  if avoid_primary_cycleway then
-    if hascycleway then 4.0
-    else 1.2
+  if and avoid_primary_cycleway hascycleway then 4.0
   else 1.2
 
 assign costfactor
