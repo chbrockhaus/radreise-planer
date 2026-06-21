@@ -32,6 +32,9 @@ COPY radreise_planer.html ./
 COPY run.sh               ./
 RUN chmod +x /app/run.sh
 
+# Eigene BRouter-Profile
+COPY profiles/ /opt/brouter/customprofiles/
+
 EXPOSE 3000
 
 CMD ["/bin/sh", "/app/run.sh"]
