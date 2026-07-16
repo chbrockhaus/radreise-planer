@@ -312,7 +312,10 @@ header{background:var(--surface);border-bottom:1px solid var(--border);padding:9
     <button class="hdr-btn" onclick="showTourModal()" title="Neue Tour erstellen oder GPX importieren">+ Neue Tour</button>
     <button class="hdr-btn" onclick="showTourManager()" title="Touren speichern und laden">💾 Touren</button>
   </div>
-  <button class="hdr-btn" id="exportBtn" onclick="exportAllGPX()" title="Alle Etappen als GPX exportieren" style="margin-left:6px">↓ GPX</button>
+  <div style="display:flex;gap:4px;margin-left:6px">
+    <button class="hdr-btn" id="exportBtn" onclick="exportAllGPX()" title="Alle Etappen als separate Tracks exportieren">↓ GPX Etappen</button>
+    <button class="hdr-btn" id="exportTotalBtn" onclick="exportTotalRouteGPX()" title="Gesamtroute als einzelnen Track exportieren">↓ Gesamtroute</button>
+  </div>
 </header>
 <div class="main">
   <div class="sidebar">
@@ -2556,6 +2559,48 @@ function exportStageGPX(i, ev) {
     .replace(/[äöüß]/g, c => ({ä:'ae',ö:'oe',ü:'ue',ß:'ss'}[c]||c))
     .replace(/[^a-z0-9]+/g,'_').replace(/^_|_$/g,'');
   downloadGPX(`etappe_${String(i+1).padStart(2,'0')}_${slug}.gpx`, makeGPX([i]));
+}
+
+function exportTotalRouteGPX() {
+  if (!ROUTE_PTS.length) return;
+  const esc = s => String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+  const slug = ROUTE_NAME.toLowerCase()
+    .replace(/[äöüß]/g, c=>({ä:'ae',ö:'oe',ü:'ue',ß:'ss'}[c]||c))
+    .replace(/[→\s]+/g,'_').replace(/[^a-z0-9_]+/g,'').replace(/^_|_$/g,'');
+
+  let xml = '<?xml version="1.0" encoding="UTF-8"?>\n';
+  xml += '<gpx version="1.1" creator="Radreise Planer" xmlns="http://www.topografix.com/GPX/1/1">\n';
+  xml += `<metadata><name>${esc(ROUTE_NAME)}</name></metadata>\n`;
+
+  const [sLat, sLon] = ROUTE_PTS[0];
+  xml += `<wpt lat="${sLat.toFixed(6)}" lon="${sLon.toFixed(6)}"><name>${esc('Start: ' + (ROUTE_NAME.split('→')[0]?.trim() || 'Start'))}</name></wpt>\n`;
+
+  for (let i = 0; i < NUM_STAGES; i++) {
+    const st = stages[i];
+    if (st.campTarget != null) {
+      const c = st.campsites?.[st.campTarget.ci];
+      if (c?.lat && c?.lon) {
+        xml += `<wpt lat="${c.lat.toFixed(6)}" lon="${c.lon.toFixed(6)}">`;
+        xml += `<name>${esc('E' + (i+1) + ': ' + c.name)}</name>`;
+        if (c.address) xml += `<desc>${esc(c.address)}</desc>`;
+        xml += '</wpt>\n';
+      }
+    } else {
+      const ep = STAGE_ENDS[i];
+      if (ep) {
+        xml += `<wpt lat="${ep.lat.toFixed(6)}" lon="${ep.lon.toFixed(6)}">`;
+        xml += `<name>${esc('E' + (i+1) + ': ' + ep.name)}</name>`;
+        xml += '</wpt>\n';
+      }
+    }
+  }
+
+  xml += `<trk><name>${esc(ROUTE_NAME)}</name><trkseg>\n`;
+  for (const [lat, lon] of ROUTE_PTS)
+    xml += `<trkpt lat="${lat.toFixed(6)}" lon="${lon.toFixed(6)}"/>\n`;
+  xml += '</trkseg></trk>\n</gpx>';
+
+  downloadGPX(`gesamtroute_${slug || 'tour'}.gpx`, xml);
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
