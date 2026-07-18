@@ -301,7 +301,7 @@ header{background:var(--surface);border-bottom:1px solid var(--border);padding:9
 </head>
 <body>
 <header>
-  <div class="logo">🚴 Radreise Planer<span class="logo-ver">v1.3.7</span></div>
+  <div class="logo">🚴 Radreise Planer<span class="logo-ver">v1.3.8</span></div>
   <div class="stats">
     <div class="stat"><span class="sl">Route</span><span class="sv" id="hdrRoute" style="color:var(--muted)">–</span></div>
     <div class="stat"><span class="sl">Gesamt</span><span class="sv" id="hdrTotal" style="color:var(--muted)">–</span></div>
@@ -1243,7 +1243,10 @@ async function setManualAsTarget(si, midx, ev) {
   try {
     const stStartIdx = si > 0 ? routeIdxAtKm(stageMainBoundaryKm(si - 1)) : 0;
     const stEndIdx   = si < NUM_STAGES - 1 ? routeIdxAtKm(stageMainBoundaryKm(si)) : ROUTE_PTS.length - 1;
-    const branchIdx  = nearestRoutePt(c.lat, c.lon, stStartIdx, stEndIdx);
+    // Seam the branch a touch before the closest approach so BRouter takes the
+    // natural turn-off instead of overshooting the nearest point and doubling back.
+    const nearIdx    = nearestRoutePt(c.lat, c.lon, stStartIdx, stEndIdx);
+    const branchIdx  = Math.max(stStartIdx, routeIdxAtKm(routeCumDist[nearIdx] - 0.6));
     const branchPt   = ROUTE_PTS[branchIdx];
     const wpTocamp   = [branchPt, [c.lat, c.lon]];
     const { pts: detourPts }  = await brouterRoute(wpTocamp);
@@ -2184,8 +2187,11 @@ async function setAsTarget(si, ci) {
     const stStartIdx = si > 0 ? routeIdxAtKm(stageMainBoundaryKm(si - 1)) : 0;
     const stEndIdx   = si < NUM_STAGES - 1 ? routeIdxAtKm(stageMainBoundaryKm(si)) : ROUTE_PTS.length - 1;
 
-    // Branch point: nearest original-route point to campsite within this stage
-    const branchIdx = nearestRoutePt(c.lat, c.lon, stStartIdx, stEndIdx);
+    // Closest approach of the route to the camp, then seam the branch a touch
+    // BEFORE it so BRouter takes the natural turn-off toward the camp instead of
+    // overshooting to the nearest point and doubling back to it.
+    const nearIdx   = nearestRoutePt(c.lat, c.lon, stStartIdx, stEndIdx);
+    const branchIdx = Math.max(stStartIdx, routeIdxAtKm(routeCumDist[nearIdx] - 0.6));
     const branchPt  = ROUTE_PTS[branchIdx];
 
     // Shortest path: branch point → campsite  (2 waypoints only)
