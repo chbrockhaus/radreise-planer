@@ -1,5 +1,8 @@
 # Changelog — Radreise Planer
 
+## v1.4.3 (2026-07-18)
+- Fix: Beim Neuberechnen **aller** Etappen gingen verschobene Etappengrenzen verloren. Ursache: `STAGE_ENDS` wird beim Verschieben einer Grenze nicht mitgeführt (dort ändert sich nur `adjustKm`), diente aber als Wegpunkt-Quelle — zusätzlich wurden die Grenzen danach wieder gleichmäßig verteilt. Jetzt wird durch die **tatsächlichen** Grenzen geroutet und diese bleiben danach erhalten (Etappenlängen aus den echten Abständen abgeleitet).
+
 ## v1.4.2 (2026-07-18)
 - Fix: Bei einem Campingplatz als Ziel der **letzten** Etappe blieb die alte Zielstrecke sichtbar. Die Route endet jetzt korrekt am Campingplatz — der blaue Rest vom Abzweig bis zum alten Ziel wird nicht mehr gezeichnet. (km und GPX-Export waren bereits korrekt.)
 - CHANGELOG.md liegt jetzt im Add-on-Verzeichnis, damit Home Assistant ihn anzeigt.

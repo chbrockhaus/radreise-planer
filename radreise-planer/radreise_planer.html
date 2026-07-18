@@ -302,7 +302,7 @@ header{background:var(--surface);border-bottom:1px solid var(--border);padding:9
 </head>
 <body>
 <header>
-  <div class="logo">🚴 Radreise Planer<span class="logo-ver">v1.4.2</span></div>
+  <div class="logo">🚴 Radreise Planer<span class="logo-ver">v1.4.3</span></div>
   <div class="stats">
     <div class="stat"><span class="sl">Route</span><span class="sv" id="hdrRoute" style="color:var(--muted)">–</span></div>
     <div class="stat"><span class="sl">Gesamt</span><span class="sv" id="hdrTotal" style="color:var(--muted)">–</span></div>
@@ -3510,6 +3510,30 @@ function populateRerouteStages() {
 }
 
 /** Ausgewählte Etappen der Hauptroute mit dem aktuellen BRouter-Profil neu berechnen */
+// Etappengrenzen nach einem Voll-Reroute an ihren Wegpunkten halten:
+// STAGE_ENDS auf die neue Route schnappen und adjustKm aus den tatsächlichen
+// Abständen ableiten. Ohne das würden gleichmäßig verteilte Grenzen die vom
+// Nutzer verschobenen überschreiben.
+function restoreBoundaries(boundaryPts, stageNames) {
+  if (!ROUTE_PTS.length || !routeCumDist.length) return;
+  STAGE_ENDS = [];
+  let prevIdx = 0, prevKm = 0;
+  for (let i = 0; i < NUM_STAGES; i++) {
+    const isLast = i === NUM_STAGES - 1;
+    const idx = (!isLast && boundaryPts[i])
+      ? nearestRoutePt(boundaryPts[i][0], boundaryPts[i][1], prevIdx, ROUTE_PTS.length - 1)
+      : ROUTE_PTS.length - 1;
+    const [lat, lon] = ROUTE_PTS[idx];
+    STAGE_ENDS.push({ lat, lon, name: stageNames?.[i] || `Etappe ${i + 1}` });
+    if (!isLast) {
+      // Letzte Etappe nutzt restKm() — kein adjustKm nötig
+      stages[i].adjustKm = (routeCumDist[idx] - prevKm) - BASE_KM_INT;
+      prevKm = routeCumDist[idx];
+    }
+    prevIdx = idx;
+  }
+}
+
 // Während der Wiederherstellung mehrerer Ziele: kein flyTo pro Camp (kein Zappeln).
 let _reapplyBusy = false;
 
@@ -3558,6 +3582,17 @@ async function applyReroute() {
   const isFullReroute  = checkedSet.size === NUM_STAGES;
   const newSegKm       = {};  // si → tatsächliche km (nur partial)
 
+  // Tatsächliche Etappengrenzen als Wegpunkte sichern. STAGE_ENDS wird beim
+  // Verschieben einer Grenze NICHT mitgeführt (dort ändert sich nur adjustKm),
+  // wäre hier also veraltet und würde die Verschiebung verwerfen.
+  const boundaryPts = [];
+  if (ROUTE_PTS.length) {
+    for (let i = 0; i < NUM_STAGES - 1; i++) {
+      const idx = Math.min(routeIdxAtKm(stageMainBoundaryKm(i)), ROUTE_PTS.length - 1);
+      boundaryPts.push(ROUTE_PTS[idx]);
+    }
+  }
+
   // Aktive Etappenziele (Camps) sichern, um sie nach dem Reroute auf der neuen
   // Route (neues Profil) wiederherzustellen statt sie zu verlieren.
   const savedTargets = [];
@@ -3576,7 +3611,8 @@ async function applyReroute() {
     if (isFullReroute) {
       // ── Alle Etappen: ein einziger BRouter-Aufruf durch alle Etappenenden ──
       btn.textContent = '⏳ Berechne Gesamtroute…';
-      const waypoints = [ROUTE_PTS[0], ...STAGE_ENDS.map(se => [se.lat, se.lon])];
+      // Durch die tatsächlichen Etappengrenzen + das Ziel routen
+      const waypoints = [ROUTE_PTS[0], ...boundaryPts, ROUTE_PTS[ROUTE_PTS.length - 1]];
       const { pts, eles } = await brouterRoute(waypoints);
       newPts  = pts;
       newEles = eles;
@@ -3620,10 +3656,12 @@ async function applyReroute() {
     TOTAL_KM = routeCumDist[routeCumDist.length - 1] || TOTAL_KM;
 
     if (isFullReroute) {
-      // Vollständig neu: BASE_KM_INT anpassen, alle Etappen zurücksetzen
+      // Vollständig neu: BASE_KM_INT anpassen, Etappen neu aufbauen — aber die
+      // Grenzen an den durchfahrenen Wegpunkten halten statt gleichmäßig neu zu
+      // verteilen, damit verschobene Etappengrenzen erhalten bleiben.
       BASE_KM_INT = Math.round(TOTAL_KM / NUM_STAGES) || 1;
       rebuildStages();
-      computeStageEnds(stageNames);
+      restoreBoundaries(boundaryPts, stageNames);
     } else {
       // Partiell: BASE_KM_INT bleibt, nur die umgerouteten Etappen bekommen neues adjustKm
       for (const [si, km] of Object.entries(newSegKm)) {
