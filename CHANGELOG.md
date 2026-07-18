@@ -1,5 +1,8 @@
 # Changelog — Radreise Planer
 
+## v1.3.7 (2026-07-18)
+- Fix: Rückweg vom Campingplatz-Etappenziel führte zurück zum Abzweig statt vorwärts. Der Wiedereinstieg in die Route liegt jetzt in Fahrtrichtung *vor* dem Abzweig (Abstand proportional zur Entfernung des Camps von der Route) — der Umweg wird zu einem Bogen nach vorne statt einer Rückkehr.
+
 ## v1.3.6 (2026-07-17)
 - Neuer Button **↓ Gesamtroute**: exportiert die gesamte Route als einen einzelnen kontinuierlichen GPX-Track (ideal für GPS-Geräte)
 - Bestehender **↓ GPX Etappen**-Button bleibt erhalten (separate Tracks pro Etappe)

@@ -301,7 +301,7 @@ header{background:var(--surface);border-bottom:1px solid var(--border);padding:9
 </head>
 <body>
 <header>
-  <div class="logo">🚴 Radreise Planer<span class="logo-ver">v1.3.6</span></div>
+  <div class="logo">🚴 Radreise Planer<span class="logo-ver">v1.3.7</span></div>
   <div class="stats">
     <div class="stat"><span class="sl">Route</span><span class="sv" id="hdrRoute" style="color:var(--muted)">–</span></div>
     <div class="stat"><span class="sl">Gesamt</span><span class="sv" id="hdrTotal" style="color:var(--muted)">–</span></div>
@@ -1254,7 +1254,11 @@ async function setManualAsTarget(si, midx, ev) {
     stages[si].campTarget = { ci: null, _manual: true, _manualIdx: midx, waypoints: wpTocamp, brouterPts: detourPts, routePts: stagePts, km: ptsKm(stagePts), branchIdx };
     if (si < NUM_STAGES - 1) {
       const stI1EndIdx = si + 1 < NUM_STAGES - 1 ? routeIdxAtKm(stageMainBoundaryKm(si + 1)) : ROUTE_PTS.length - 1;
-      const fwdMinIdx  = Math.min(routeIdxAheadByKm(branchIdx, 0.5), stI1EndIdx);
+      // Rejoin AHEAD of the branch so the return leg continues forward instead of
+      // doubling back (margin proportional to the camp's offset from the route).
+      const offsetKm   = hav(c.lat, c.lon, branchPt[0], branchPt[1]);
+      const clearKm    = Math.min(8, Math.max(1, offsetKm * 2));
+      const fwdMinIdx  = Math.min(routeIdxAheadByKm(branchIdx, clearKm), stI1EndIdx);
       const rejoinIdx  = nearestRoutePt(c.lat, c.lon, fwdMinIdx, stI1EndIdx);
       const rejoinPt   = ROUTE_PTS[rejoinIdx];
       const wpReturn   = [[c.lat, c.lon], rejoinPt];
@@ -2197,8 +2201,13 @@ async function setAsTarget(si, ci) {
     // Stage i+1: rejoin original route AHEAD (never behind) of the branch point
     if (si < NUM_STAGES - 1) {
       const stI1EndIdx = si + 1 < NUM_STAGES - 1 ? routeIdxAtKm(stageMainBoundaryKm(si + 1)) : ROUTE_PTS.length - 1;
-      // Rejoin: nearest forward point at least 0.5 km ahead of branch
-      const fwdMinIdx  = Math.min(routeIdxAheadByKm(branchIdx, 0.5), stI1EndIdx);
+      // Rejoin AHEAD of the branch so the return leg continues forward instead of
+      // doubling back. Keep clear of the branch by a margin proportional to how far
+      // the camp sits off the route (nearest-to-camp alone collapses onto the
+      // branch, since the route departs from the camp going forward).
+      const offsetKm   = hav(c.lat, c.lon, branchPt[0], branchPt[1]);
+      const clearKm    = Math.min(8, Math.max(1, offsetKm * 2));
+      const fwdMinIdx  = Math.min(routeIdxAheadByKm(branchIdx, clearKm), stI1EndIdx);
       const rejoinIdx  = nearestRoutePt(c.lat, c.lon, fwdMinIdx, stI1EndIdx);
       const rejoinPt   = ROUTE_PTS[rejoinIdx];
 
