@@ -1,5 +1,8 @@
 # Changelog — Radreise Planer
 
+## v1.4.5 (2026-07-18)
+- Fix: `stageEndLatLon()` lieferte für die **letzte** Etappe ein falsches Ende, sobald Etappengrenzen verschoben waren. Sie leitete das Ende aus der Summe `BASE_KM_INT + adjustKm` ab — die trifft `TOTAL_KM` aber nicht, weil die letzte Etappe `restKm()` nutzt. Bei nach vorn verschobenen Grenzen lag das Ende bis zu 30 km zu früh, was u.a. die „nächste Etappe"-Auswahl beim Camp-POI-Routing verfälschte. Die letzte Etappe endet jetzt immer am Routenende (bzw. an ihrem Camp).
+
 ## v1.4.4 (2026-07-18)
 - Fix: Der Ziel-Marker „Z" blieb am alten Ziel stehen, wenn für die letzte Etappe ein Campingplatz als Ziel gesetzt wurde. Die letzte Etappe hat keinen eigenen nummerierten Marker — sie wird allein durch „Z" dargestellt, und dessen Position war fest auf das Routenende verdrahtet. „Z" wandert jetzt zum Campingplatz (Tooltip zeigt den Camp-Namen).
 
