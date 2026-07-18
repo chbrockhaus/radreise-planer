@@ -302,7 +302,7 @@ header{background:var(--surface);border-bottom:1px solid var(--border);padding:9
 </head>
 <body>
 <header>
-  <div class="logo">🚴 Radreise Planer<span class="logo-ver">v1.4.6</span></div>
+  <div class="logo">🚴 Radreise Planer<span class="logo-ver">v1.5.0</span></div>
   <div class="stats">
     <div class="stat"><span class="sl">Route</span><span class="sv" id="hdrRoute" style="color:var(--muted)">–</span></div>
     <div class="stat"><span class="sl">Gesamt</span><span class="sv" id="hdrTotal" style="color:var(--muted)">–</span></div>
@@ -1008,6 +1008,25 @@ async function loadTargets() {
   } catch {}
 }
 
+// Popup für einen Campingplatz-Punkt auf der Karte: Infos + Button, um ihn
+// direkt als Etappenziel zu setzen bzw. wieder zu entfernen.
+function campDotPopup(si, c, isTarget, onclickJs) {
+  const esc = s => String(s ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;')
+                                  .replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+  const dg = c.dayguests === 'yes' ? '✓ Tagesgäste ok'
+           : c.dayguests === 'no'  ? '✗ Keine Tagesgäste' : '? Unklar';
+  const dist = (c.lat != null) ? ` · ${liveDistKm(si, c).toFixed(1)} km` : '';
+  const btnCol = isTarget ? '#ff4d4d' : 'var(--accent,#3d8eff)';
+  return `<div class="co-inner">
+    <div class="co-title">${esc(c.name)}</div>
+    <div class="co-row">Etappe ${si + 1}${dist}</div>
+    <div class="co-row">${dg}</div>
+    ${c.address ? `<div class="co-row">📍 ${esc(c.address)}</div>` : ''}
+    ${c.note    ? `<div class="co-row">📝 ${esc(c.note)}</div>` : ''}
+    <button onclick="${onclickJs}" style="width:100%;margin-top:7px;background:${btnCol};color:#fff;border:none;border-radius:5px;padding:7px;cursor:pointer;font-size:11px;font-weight:600;font-family:inherit">${isTarget ? '✗ Ziel entfernen' : '⛳ Als Etappenziel setzen'}</button>
+  </div>`;
+}
+
 function drawMarkers() {
   stageMarkers.forEach(m => leafletMap.removeLayer(m));
   campsiteMarkers.forEach(m => leafletMap.removeLayer(m));
@@ -1121,16 +1140,20 @@ function drawMarkers() {
       if (!c.lat || !c.lon) return;
       const isActive = activeCamp?.si===si && activeCamp?.ci===ci;
       const col = c.dayguests === 'yes' ? '#28c76a' : c.dayguests === 'no' ? '#ff4d4d' : '#f5a623';
+      const isTarget = st.campTarget != null && !st.campTarget._manual && st.campTarget.ci === ci;
       const tip = `⛺ ${c.name}${c.lat ? '<br>' + liveDistKm(si, c).toFixed(1) + ' km' : ''}` +
         `<br>${c.dayguests === 'yes' ? '✓ Tagesgäste ok' : c.dayguests === 'no' ? '✗ Keine Tagesgäste' : '? Unklar'}` +
-        `${c.address ? '<br>' + c.address : ''}`;
+        `${c.address ? '<br>' + c.address : ''}` +
+        `<br><em>${isTarget ? 'Klick: Ziel entfernen' : 'Klick: als Etappenziel setzen'}</em>`;
       const dot = L.circleMarker([c.lat, c.lon], {
         radius: isActive ? 13 : 6,
         fillColor: col,
         color: isActive ? '#fff' : 'rgba(0,0,0,.3)',
         weight: isActive ? 3 : 1,
         fillOpacity: 1
-      }).bindTooltip(tip, { sticky: true, direction: 'top' });
+      }).bindTooltip(tip, { sticky: true, direction: 'top' })
+        .bindPopup(campDotPopup(si, c, isTarget, `setAsTarget(${si},${ci})`),
+                   { maxWidth: 260, className: 'co-popup' });
       dot.on('click', e => { L.DomEvent.stopPropagation(e); selectCamp(si, ci); });
       dot.addTo(leafletMap);
       campsiteMarkers.push(dot);
@@ -1144,14 +1167,16 @@ function drawMarkers() {
       if (!c.lat || !c.lon) return;
       const isTarget = stages[si]?.campTarget?._manual && stages[si].campTarget._manualIdx === midx;
       const col = c.dayguests === 'yes' ? '#28c76a' : c.dayguests === 'no' ? '#ff4d4d' : '#f5a623';
-      const tip = `✋ ${c.name}${c.note ? '<br>' + c.note : ''}<br>${c.dayguests === 'yes' ? '✓ Tagesgäste ok' : c.dayguests === 'no' ? '✗ Keine Tagesgäste' : '? Unklar'}<br><em>Manuell hinzugefügt</em>`;
+      const tip = `✋ ${c.name}${c.note ? '<br>' + c.note : ''}<br>${c.dayguests === 'yes' ? '✓ Tagesgäste ok' : c.dayguests === 'no' ? '✗ Keine Tagesgäste' : '? Unklar'}<br><em>Manuell · ${isTarget ? 'Klick: Ziel entfernen' : 'Klick: als Etappenziel setzen'}</em>`;
       const dot = L.circleMarker([c.lat, c.lon], {
         radius: isTarget ? 13 : 7,
         fillColor: col,
         color: isTarget ? '#fff' : '#3d8eff',
         weight: isTarget ? 3 : 2,
         fillOpacity: 1
-      }).bindTooltip(tip, { sticky: true, direction: 'top' });
+      }).bindTooltip(tip, { sticky: true, direction: 'top' })
+        .bindPopup(campDotPopup(si, c, isTarget, `setManualAsTarget(${si},${midx})`),
+                   { maxWidth: 260, className: 'co-popup' });
       dot.addTo(leafletMap);
       campsiteMarkers.push(dot);
     });

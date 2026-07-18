@@ -1,5 +1,8 @@
 # Changelog — Radreise Planer
 
+## v1.5.0 (2026-07-18)
+- **Neu: Etappenziel direkt vom Kartenpunkt setzen.** Klick auf einen Campingplatz-Punkt öffnet jetzt ein Popup mit Name, Etappe, Entfernung, Tagesgäste-Status und einem Button „⛳ Als Etappenziel setzen" bzw. „✗ Ziel entfernen" — der Umweg über die Sidebar entfällt. Funktioniert für Suchergebnisse **und** manuell angelegte Campingplätze (die hatten bisher gar keinen Klick). Der Hover-Tooltip zeigt weiterhin die Kurzinfo und weist auf die Klick-Aktion hin.
+
 ## v1.4.6 (2026-07-18)
 - Fix: Nach dem Laden (Seitenstart oder gespeicherte Tour) wurde der als Ziel gesetzte Campingplatz **nicht mehr gefunden**. Beim Wiederherstellen wird `campsites` auf den einen gespeicherten Platz reduziert, `campTarget.ci` behielt aber den ursprünglichen Index aus der damaligen Trefferliste (z.B. 3) und zeigte damit ins Leere. Folge: Ziel-Marker „Z" blieb am Routenende statt am Campingplatz, Etappenmarker wanderte nicht mit, GPX-Wegpunkt fiel auf das Etappenende zurück und die Sidebar zeigte nur „Campingplatz". Der Index wird jetzt beim Wiederherstellen korrigiert (Suche per Koordinaten, sonst 0) — eine vollständig wiederhergestellte Trefferliste bleibt unverändert.
 
