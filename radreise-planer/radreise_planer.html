@@ -302,7 +302,7 @@ header{background:var(--surface);border-bottom:1px solid var(--border);padding:9
 </head>
 <body>
 <header>
-  <div class="logo">🚴 Radreise Planer<span class="logo-ver">v1.4.5</span></div>
+  <div class="logo">🚴 Radreise Planer<span class="logo-ver">v1.4.6</span></div>
   <div class="stats">
     <div class="stat"><span class="sl">Route</span><span class="sv" id="hdrRoute" style="color:var(--muted)">–</span></div>
     <div class="stat"><span class="sl">Gesamt</span><span class="sv" id="hdrTotal" style="color:var(--muted)">–</span></div>
@@ -963,6 +963,23 @@ async function saveTargets() {
   try { await fetch('/api/targets', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(data) }); } catch {}
 }
 
+// campTarget.ci zeigt in die Trefferliste vom Zeitpunkt des Speicherns. Beim
+// Wiederherstellen enthält campsites aber oft nur noch den einen gespeicherten
+// Platz — dann zeigt ci ins Leere und der Camp wird nirgends gefunden (Ziel-
+// Marker, Etappenmarker, GPX-Wegpunkt, Sidebar-Name). Hier auf den passenden
+// Eintrag korrigieren: erst per Koordinaten suchen, sonst auf 0 zurückfallen.
+function _fixCampTargetCi(si, savedCampsite) {
+  const st = stages[si];
+  if (!st?.campTarget || st.campTarget._manual) return;
+  const list = st.campsites || [];
+  const ci = st.campTarget.ci;
+  if (Number.isInteger(ci) && ci >= 0 && ci < list.length) return;  // gültig
+  const sc = savedCampsite;
+  const byPos = (sc?.lat != null) ? list.findIndex(c =>
+    Math.abs(c.lat - sc.lat) < 1e-6 && Math.abs(c.lon - sc.lon) < 1e-6) : -1;
+  st.campTarget.ci = byPos >= 0 ? byPos : 0;
+}
+
 async function loadTargets() {
   try {
     const r = await fetch('/api/targets');
@@ -982,6 +999,7 @@ async function loadTargets() {
           _manualIdx: saved.isManual ? (saved.manualIdx ?? null) : undefined,
           ...saved.tocamp
         };
+        _fixCampTargetCi(si, saved.campsite);
       }
       if (saved.fromPrev && si < NUM_STAGES - 1) {
         stages[si+1].campFromPrev = { ...saved.fromPrev };
@@ -3372,6 +3390,7 @@ async function restoreTourState(data) {
           _manualIdx: saved.isManual ? (saved.manualIdx ?? null) : undefined,
           ...saved.tocamp
         };
+        _fixCampTargetCi(si, saved.campsite);
       }
       if (saved.fromPrev && si < NUM_STAGES - 1)
         stages[si+1].campFromPrev = {...saved.fromPrev};

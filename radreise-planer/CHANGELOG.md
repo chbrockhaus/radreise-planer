@@ -1,5 +1,8 @@
 # Changelog — Radreise Planer
 
+## v1.4.6 (2026-07-18)
+- Fix: Nach dem Laden (Seitenstart oder gespeicherte Tour) wurde der als Ziel gesetzte Campingplatz **nicht mehr gefunden**. Beim Wiederherstellen wird `campsites` auf den einen gespeicherten Platz reduziert, `campTarget.ci` behielt aber den ursprünglichen Index aus der damaligen Trefferliste (z.B. 3) und zeigte damit ins Leere. Folge: Ziel-Marker „Z" blieb am Routenende statt am Campingplatz, Etappenmarker wanderte nicht mit, GPX-Wegpunkt fiel auf das Etappenende zurück und die Sidebar zeigte nur „Campingplatz". Der Index wird jetzt beim Wiederherstellen korrigiert (Suche per Koordinaten, sonst 0) — eine vollständig wiederhergestellte Trefferliste bleibt unverändert.
+
 ## v1.4.5 (2026-07-18)
 - Fix: `stageEndLatLon()` lieferte für die **letzte** Etappe ein falsches Ende, sobald Etappengrenzen verschoben waren. Sie leitete das Ende aus der Summe `BASE_KM_INT + adjustKm` ab — die trifft `TOTAL_KM` aber nicht, weil die letzte Etappe `restKm()` nutzt. Bei nach vorn verschobenen Grenzen lag das Ende bis zu 30 km zu früh, was u.a. die „nächste Etappe"-Auswahl beim Camp-POI-Routing verfälschte. Die letzte Etappe endet jetzt immer am Routenende (bzw. an ihrem Camp).
 
