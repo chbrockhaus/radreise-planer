@@ -302,7 +302,7 @@ header{background:var(--surface);border-bottom:1px solid var(--border);padding:9
 </head>
 <body>
 <header>
-  <div class="logo">🚴 Radreise Planer<span class="logo-ver">v1.4.0</span></div>
+  <div class="logo">🚴 Radreise Planer<span class="logo-ver">v1.4.1</span></div>
   <div class="stats">
     <div class="stat"><span class="sl">Route</span><span class="sv" id="hdrRoute" style="color:var(--muted)">–</span></div>
     <div class="stat"><span class="sl">Gesamt</span><span class="sv" id="hdrTotal" style="color:var(--muted)">–</span></div>
@@ -2261,7 +2261,7 @@ async function setAsTarget(si, ci) {
   stages[si].routeLoading = false;
   drawCustomRoutes(); render(); drawMarkers();
   await saveTargets();
-  leafletMap.flyTo([c.lat, c.lon], 12, { duration: 0.6 });
+  if (!_reapplyBusy) leafletMap.flyTo([c.lat, c.lon], 12, { duration: 0.6 });
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -3502,6 +3502,40 @@ function populateRerouteStages() {
 }
 
 /** Ausgewählte Etappen der Hauptroute mit dem aktuellen BRouter-Profil neu berechnen */
+// Während der Wiederherstellung mehrerer Ziele: kein flyTo pro Camp (kein Zappeln).
+let _reapplyBusy = false;
+
+// Gesicherte Etappenziele auf der (neu berechneten) Route wiederherstellen.
+// Jedes Ziel wird auf seiner ursprünglichen Etappe frisch gegen die neue Route
+// (mit dem aktuellen Routing-Profil) berechnet.
+async function reapplyTargets(saved, btn) {
+  if (!saved || !saved.length) return;
+  _reapplyBusy = true;
+  let touchedManual = false;
+  try {
+    for (let k = 0; k < saved.length; k++) {
+      const t = saved[k];
+      if (t.i < 0 || t.i >= NUM_STAGES) continue;
+      if (btn) btn.textContent = `⏳ Etappenziel ${k + 1}/${saved.length}…`;
+      try {
+        if (t.isManual) {
+          if (!manualCamps[t.i]) manualCamps[t.i] = [];
+          let midx = manualCamps[t.i].findIndex(c =>
+            Math.abs(c.lat - t.camp.lat) < 1e-6 && Math.abs(c.lon - t.camp.lon) < 1e-6);
+          if (midx < 0) { manualCamps[t.i].push({ ...t.camp }); midx = manualCamps[t.i].length - 1; touchedManual = true; }
+          await setManualAsTarget(t.i, midx);
+        } else {
+          stages[t.i].campsites = [{ ...t.camp, _restored: true }];
+          await setAsTarget(t.i, 0);
+        }
+      } catch (e) { console.warn('Etappenziel wiederherstellen (Etappe ' + (t.i + 1) + '):', e); }
+    }
+  } finally {
+    _reapplyBusy = false;
+    if (touchedManual) await saveManualCamps();
+  }
+}
+
 async function applyReroute() {
   const checkedSet = new Set(
     [...document.querySelectorAll('#rerouteStageList input[type=checkbox]:checked')]
@@ -3515,6 +3549,17 @@ async function applyReroute() {
   const stageNames     = STAGE_ENDS.map(se => se.name);
   const isFullReroute  = checkedSet.size === NUM_STAGES;
   const newSegKm       = {};  // si → tatsächliche km (nur partial)
+
+  // Aktive Etappenziele (Camps) sichern, um sie nach dem Reroute auf der neuen
+  // Route (neues Profil) wiederherzustellen statt sie zu verlieren.
+  const savedTargets = [];
+  stages.forEach((st, i) => {
+    if (!st.campTarget) return;
+    const isManual = !!st.campTarget._manual;
+    const camp = isManual ? manualCamps[i]?.[st.campTarget._manualIdx]
+                          : st.campsites?.[st.campTarget.ci];
+    if (camp) savedTargets.push({ i, isManual, camp: { ...camp } });
+  });
 
   try {
     let newPts  = [];
@@ -3579,18 +3624,23 @@ async function applyReroute() {
           // Letzte Etappe nutzt restKm() — kein adjustKm nötig
           stages[i].adjustKm = km - BASE_KM_INT;
         }
-        stages[i].campTarget   = null;
-        stages[i].campFromPrev = null;
       }
       // STAGE_ENDS-Positionen bleiben gültig — Route läuft durch diese Punkte
     }
 
     updateHeaderStats();
     await saveRouteData();
-    try { await fetch('/api/targets', {method:'POST',headers:{'Content-Type':'application/json'},body:'{}'}); } catch {}
+    buildMainRouteLayer();
+    drawCustomRoutes(); render(); drawMarkers();
+
+    // Etappenziele auf der neuen Route (neues Profil) wiederherstellen.
+    // Zuerst alle Rest-Ziele säubern (partiell: nicht-umgeroutete behalten sonst
+    // veraltete Geometrie), dann jedes gesicherte Ziel frisch neu berechnen.
+    stages.forEach(st => { st.campTarget = null; st.campFromPrev = null; });
+    await reapplyTargets(savedTargets, btn);
+    await saveTargets();
 
     toggleReroutePanel();
-    buildMainRouteLayer();
     if (ROUTE_PTS.length) leafletMap.fitBounds(L.polyline(ROUTE_PTS).getBounds(), {padding:[40,40]});
     drawCustomRoutes(); render(); drawMarkers();
 

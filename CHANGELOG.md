@@ -1,5 +1,8 @@
 # Changelog — Radreise Planer
 
+## v1.4.1 (2026-07-18)
+- Fix: Beim Neuberechnen der Route nach Ändern des Routing-Profils gingen die gesetzten Etappenziele (Campingplätze) verloren. Sie werden jetzt vor dem Reroute gesichert und danach auf der neuen Route mit dem neuen Profil automatisch neu berechnet (Such- und manuelle Camps, auf ihrer ursprünglichen Etappe).
+
 ## v1.4.0 (2026-07-18)
 - **Neu: Campingplatz direkt aus der Karte zur Etappe routen.** Im Popup eines Camp-POI gibt es den Button „⛳ Route hierher (nächste Etappe)". Er ändert automatisch die Etappe, deren aktuelles Ende am nächsten liegt, und routet dorthin.
 - **Fix: Höhenmeter berücksichtigen jetzt den Camp-Abstecher.** Bisher zeigte die Sidebar beim Umrouten zu einem Camp nur die Höhenmeter der Hauptroute. Jetzt werden die BRouter-Höhendaten des Abstechers gespeichert und die Etappen-Höhenmeter (↑/↓) korrekt aus dem tatsächlich gefahrenen Verlauf berechnet (auch km waren schon korrekt). Gilt für Such-Camps und manuelle Camps, inkl. Persistenz in gespeicherten Touren.
