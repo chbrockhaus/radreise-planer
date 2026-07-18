@@ -1,5 +1,10 @@
 # Changelog — Radreise Planer
 
+## v1.6.0 (2026-07-18)
+- **Neu: Rückgängig-Button** („↶ Rückgängig", oben im Header). Macht die letzten Aktionen schrittweise rückgängig — bis zu 20 Schritte. Der Tooltip zeigt jeweils, was rückgängig gemacht wird.
+- Erfasst werden: Campingplatz als Etappenziel setzen/entfernen, Etappengrenze verschieben, Etappenanzahl ändern, Etappenlänge anpassen, Route neu berechnen, manuellen Campingplatz anlegen/löschen sowie das Routen zu einem Camp-POI von der Karte.
+- Zusammengesetzte Aktionen (z.B. Neuberechnung mit anschließender Wiederherstellung der Etappenziele) erzeugen bewusst nur **einen** Rückgängig-Schritt. Beim Rückgängig bleibt der Kartenausschnitt erhalten.
+
 ## v1.5.0 (2026-07-18)
 - **Neu: Etappenziel direkt vom Kartenpunkt setzen.** Klick auf einen Campingplatz-Punkt öffnet jetzt ein Popup mit Name, Etappe, Entfernung, Tagesgäste-Status und einem Button „⛳ Als Etappenziel setzen" bzw. „✗ Ziel entfernen" — der Umweg über die Sidebar entfällt. Funktioniert für Suchergebnisse **und** manuell angelegte Campingplätze (die hatten bisher gar keinen Klick). Der Hover-Tooltip zeigt weiterhin die Kurzinfo und weist auf die Klick-Aktion hin.
 

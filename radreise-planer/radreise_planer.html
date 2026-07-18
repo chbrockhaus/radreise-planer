@@ -164,6 +164,8 @@ header{background:var(--surface);border-bottom:1px solid var(--border);padding:9
 .route-status{font-size:10px;color:var(--green);margin-top:3px;display:flex;align-items:center;gap:4px}
 .hdr-btn{font-size:11px;font-weight:600;background:transparent;color:var(--muted);border:1px solid var(--border);border-radius:5px;padding:5px 11px;cursor:pointer;transition:all .2s;font-family:'DM Sans',sans-serif;white-space:nowrap}
 .hdr-btn:hover{background:var(--surface2);color:var(--text)}
+.hdr-btn:disabled{opacity:.35;cursor:not-allowed}
+.hdr-btn:disabled:hover{background:transparent;color:var(--muted)}
 .hdr-btn-group{display:flex;gap:0;margin-left:auto;border:1px solid var(--border);border-radius:5px;overflow:hidden}
 .hdr-btn-group .hdr-btn{border:none;border-radius:0;border-right:1px solid var(--border);margin-left:0}
 .hdr-btn-group .hdr-btn:last-child{border-right:none}
@@ -302,14 +304,16 @@ header{background:var(--surface);border-bottom:1px solid var(--border);padding:9
 </head>
 <body>
 <header>
-  <div class="logo">🚴 Radreise Planer<span class="logo-ver">v1.5.0</span></div>
+  <div class="logo">🚴 Radreise Planer<span class="logo-ver">v1.6.0</span></div>
   <div class="stats">
     <div class="stat"><span class="sl">Route</span><span class="sv" id="hdrRoute" style="color:var(--muted)">–</span></div>
     <div class="stat"><span class="sl">Gesamt</span><span class="sv" id="hdrTotal" style="color:var(--muted)">–</span></div>
     <div class="stat"><span class="sl">Etappen</span><span class="sv" id="hdrStages" style="color:var(--muted)">–</span></div>
     <div class="stat"><span class="sl">Radius</span><span class="sv">≤ 15 km</span></div>
   </div>
-  <div class="hdr-btn-group">
+  <button class="hdr-btn" id="undoBtn" onclick="undoLast()" disabled
+    title="Nichts rückgängig zu machen" style="margin-left:auto;margin-right:6px">↶ Rückgängig</button>
+  <div class="hdr-btn-group" style="margin-left:0">
     <button class="hdr-btn" onclick="showTourModal()" title="Neue Tour erstellen oder GPX importieren">+ Neue Tour</button>
     <button class="hdr-btn" onclick="showTourManager()" title="Touren speichern und laden">💾 Touren</button>
   </div>
@@ -681,6 +685,7 @@ function updateHeaderStats() {
 function changeStageCount(delta) {
   if (!ROUTE_PTS.length) return;
   const newCount = Math.max(1, Math.min(30, NUM_STAGES + delta));
+  if (newCount !== NUM_STAGES) pushUndo(`Etappenanzahl ${NUM_STAGES} → ${newCount}`);
   if (newCount === NUM_STAGES) return;
   NUM_STAGES = newCount;
   BASE_KM_INT = Math.round(TOTAL_KM / NUM_STAGES) || 1;
@@ -1094,6 +1099,7 @@ function drawMarkers() {
           setTimeout(() => { drawCustomRoutes(); render(); drawMarkers(); }, 0);
           return;
         }
+        pushUndo(`Etappengrenze ${i + 1}|${i + 2} verschoben`);
         const oldStageKm = BASE_KM_INT + stages[i].adjustKm;
         const delta      = oldStageKm - newStageKm;
         if (i + 1 < NUM_STAGES - 1) {
@@ -1265,6 +1271,7 @@ function saveNewCamp(si, ev) {
   if (isNaN(lat) || lat < -90 || lat > 90 || isNaN(lon) || lon < -180 || lon > 180) {
     alert('Bitte gültige Koordinaten eingeben (Lat: -90–90, Lon: -180–180)'); return;
   }
+  pushUndo(`Camp „${name}" hinzugefügt (Etappe ${si + 1})`);
   if (!manualCamps[si]) manualCamps[si] = [];
   manualCamps[si].push({ name, lat, lon, address: '', website: url, dayguests: dg, note, dist_km: null, _manual: true });
   addingCampFor = null;
@@ -1276,6 +1283,7 @@ async function deleteManualCamp(si, midx, ev) {
   const c = manualCamps[si]?.[midx];
   if (!c) return;
   if (!confirm(`"${c.name}" löschen?`)) return;
+  pushUndo(`Camp „${c.name}" gelöscht (Etappe ${si + 1})`);
   // Cancel any in-flight routing and clear camp state if this was the active target
   stages[si].routingGen++;       // invalidate any in-flight routing regardless
   stages[si].routeLoading = false;
@@ -1293,6 +1301,9 @@ async function setManualAsTarget(si, midx, ev) {
   if (ev) ev.stopPropagation();
   const c = manualCamps[si]?.[midx];
   if (!c) return;
+  pushUndo(stages[si].campTarget?._manual && stages[si].campTarget._manualIdx === midx
+    ? `Ziel entfernt (Etappe ${si + 1})`
+    : `Ziel „${c.name || 'Campingplatz'}" (Etappe ${si + 1})`);
   // Toggle off
   if (stages[si].campTarget?._manual && stages[si].campTarget._manualIdx === midx) {
     stages[si].routingGen++;          // invalidate any in-flight routing
@@ -1599,6 +1610,7 @@ function adj(i, delta){
   if(i===NUM_STAGES-1) return;
   // Can't adjust while a camp route is active – the km is fixed by the route
   if(stages[i].campTarget || stages[i].campFromPrev) return;
+  pushUndo(`Etappe ${i + 1} Länge ${delta > 0 ? '+' : ''}${delta} km`);
   const minKm=Math.max(10,BASE_KM_INT-20), maxKm=BASE_KM_INT+20;
   const newKm=BASE_KM_INT+stages[i].adjustKm+delta;
   if(newKm<minKm||newKm>maxKm) return;
@@ -2243,6 +2255,9 @@ async function brouterRoute(waypoints, _retry = false, _suppressTileOffer = fals
 
 async function setAsTarget(si, ci) {
   const c = stages[si].campsites[ci];
+  pushUndo(stages[si].campTarget?.ci === ci
+    ? `Ziel entfernt (Etappe ${si + 1})`
+    : `Ziel „${c?.name || 'Campingplatz'}" (Etappe ${si + 1})`);
 
   // Toggle off if already set
   if (stages[si].campTarget?.ci === ci) {
@@ -3374,7 +3389,7 @@ async function loadTour(id) {
 }
 
 /** Gespeicherten Tour-Zustand vollständig wiederherstellen */
-async function restoreTourState(data) {
+async function restoreTourState(data, opts = {}) {
   // 1. Route
   ROUTE_PTS        = data.route_sampled    || [];
   ROUTE_ELEVATIONS = data.route_elevations || [];
@@ -3438,7 +3453,9 @@ async function restoreTourState(data) {
 
   updateHeaderStats();
   buildMainRouteLayer();
-  if (ROUTE_PTS.length) leafletMap.fitBounds(L.polyline(ROUTE_PTS).getBounds(), {padding:[40,40]});
+  // Beim Rückgängig nicht wegzoomen — der Nutzer bleibt im aktuellen Ausschnitt
+  if (opts.fit !== false && ROUTE_PTS.length)
+    leafletMap.fitBounds(L.polyline(ROUTE_PTS).getBounds(), {padding:[40,40]});
   drawCustomRoutes(); render(); drawMarkers();
 
   // 8. Alle Dateien auf dem Server aktualisieren
@@ -3568,6 +3585,55 @@ function populateRerouteStages() {
 }
 
 /** Ausgewählte Etappen der Hauptroute mit dem aktuellen BRouter-Profil neu berechnen */
+// ─────────────────────────────────────────────────────────────────────────────
+// RÜCKGÄNGIG — Snapshots des gesamten Zustands
+// Nutzt captureTourState()/restoreTourState(), also denselben Mechanismus wie
+// Speichern/Laden — dadurch ist der Snapshot automatisch vollständig
+// (Route, Etappen, Grenzen, Camp-Ziele, manuelle Camps).
+// ─────────────────────────────────────────────────────────────────────────────
+const UNDO_LIMIT = 20;
+let undoStack    = [];      // [{label, state}]
+let _undoBusy    = false;   // läuft gerade ein Undo?
+let _undoSuppress = false;  // zusammengesetzte Aktion: nur EIN Snapshot
+
+/** Zustand VOR einer Änderung sichern. label erscheint im Button-Tooltip. */
+function pushUndo(label) {
+  if (_undoBusy || _undoSuppress || !ROUTE_PTS.length) return;
+  try {
+    undoStack.push({ label, state: captureTourState(ROUTE_NAME) });
+    if (undoStack.length > UNDO_LIMIT) undoStack.shift();
+    syncUndoBtn();
+  } catch (e) { console.warn('Undo-Snapshot fehlgeschlagen:', e); }
+}
+
+function syncUndoBtn() {
+  const b = document.getElementById('undoBtn');
+  if (!b) return;
+  const last = undoStack[undoStack.length - 1];
+  b.disabled = !last;
+  b.title = last
+    ? `Rückgängig: ${last.label}  (${undoStack.length} Schritt${undoStack.length > 1 ? 'e' : ''})`
+    : 'Nichts rückgängig zu machen';
+}
+
+async function undoLast() {
+  const entry = undoStack.pop();
+  if (!entry) { syncUndoBtn(); return; }
+  const btn = document.getElementById('undoBtn');
+  if (btn) { btn.disabled = true; btn.textContent = '↶ …'; }
+  _undoBusy = true;
+  try {
+    await restoreTourState(entry.state, { fit: false });
+  } catch (e) {
+    console.warn('Undo fehlgeschlagen:', e);
+    alert('Rückgängig fehlgeschlagen: ' + e.message);
+  } finally {
+    _undoBusy = false;
+    if (btn) btn.textContent = '↶ Rückgängig';
+    syncUndoBtn();
+  }
+}
+
 // Etappengrenzen nach einem Voll-Reroute an ihren Wegpunkten halten:
 // STAGE_ENDS auf die neue Route schnappen und adjustKm aus den tatsächlichen
 // Abständen ableiten. Ohne das würden gleichmäßig verteilte Grenzen die vom
@@ -3601,6 +3667,7 @@ let _reapplyBusy = false;
 async function reapplyTargets(saved, btn) {
   if (!saved || !saved.length) return;
   _reapplyBusy = true;
+  _undoSuppress = true;   // gehört zum Reroute — kein eigener Undo-Schritt
   let touchedManual = false;
   try {
     for (let k = 0; k < saved.length; k++) {
@@ -3622,6 +3689,7 @@ async function reapplyTargets(saved, btn) {
     }
   } finally {
     _reapplyBusy = false;
+    _undoSuppress = false;
     if (touchedManual) await saveManualCamps();
   }
 }
@@ -3639,6 +3707,10 @@ async function applyReroute() {
   const stageNames     = STAGE_ENDS.map(se => se.name);
   const isFullReroute  = checkedSet.size === NUM_STAGES;
   const newSegKm       = {};  // si → tatsächliche km (nur partial)
+
+  pushUndo(isFullReroute
+    ? 'Route neu berechnet (alle Etappen)'
+    : `Route neu berechnet (${checkedSet.size} Etappe${checkedSet.size > 1 ? 'n' : ''})`);
 
   // Tatsächliche Etappengrenzen als Wegpunkte sichern. STAGE_ENDS wird beim
   // Verschieben einer Grenze NICHT mitgeführt (dort ändert sich nur adjustKm),
@@ -4464,18 +4536,25 @@ async function routeToOsmCamp(lat, lon, name) {
   }
   if (si < 0) return;
 
-  if (!manualCamps[si]) manualCamps[si] = [];
-  let midx = manualCamps[si].findIndex(c =>
-    Math.abs(c.lat - lat) < 1e-6 && Math.abs(c.lon - lon) < 1e-6);
-  if (midx < 0) {
-    manualCamps[si].push({ name: name || 'Campingplatz', lat, lon, address: '',
-      website: null, dayguests: 'unclear', note: null,
-      dist_km: Math.round(bestD * 10) / 10, _manual: true });
-    midx = manualCamps[si].length - 1;
-    await saveManualCamps();
+  // Ein Snapshot für die gesamte Aktion (Camp anlegen + als Ziel setzen)
+  pushUndo(`Ziel „${name || 'Campingplatz'}" (Etappe ${si + 1})`);
+  _undoSuppress = true;
+  try {
+    if (!manualCamps[si]) manualCamps[si] = [];
+    let midx = manualCamps[si].findIndex(c =>
+      Math.abs(c.lat - lat) < 1e-6 && Math.abs(c.lon - lon) < 1e-6);
+    if (midx < 0) {
+      manualCamps[si].push({ name: name || 'Campingplatz', lat, lon, address: '',
+        website: null, dayguests: 'unclear', note: null,
+        dist_km: Math.round(bestD * 10) / 10, _manual: true });
+      midx = manualCamps[si].length - 1;
+      await saveManualCamps();
+    }
+    focusStage(si);
+    await setManualAsTarget(si, midx);
+  } finally {
+    _undoSuppress = false;
   }
-  focusStage(si);
-  await setManualAsTarget(si, midx);
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
