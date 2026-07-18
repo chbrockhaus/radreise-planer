@@ -102,7 +102,6 @@ header{background:var(--surface);border-bottom:1px solid var(--border);padding:9
 .co-osm-link{margin-top:7px;padding-top:5px;border-top:1px solid #2d3550;font-size:9px}
 .co-osm-link a{color:#555}
 .co-osm-link a:hover{color:#888}
-
 #overpassHint{position:fixed;bottom:52px;left:50%;transform:translateX(-50%);background:rgba(18,22,32,.93);border:1px solid var(--accent,#3d8eff);border-radius:20px;padding:5px 10px 5px 12px;font-size:11px;color:var(--accent,#3d8eff);z-index:9500;display:none;align-items:center;gap:8px;white-space:nowrap;box-shadow:0 2px 10px rgba(0,0,0,.4)}
 #overpassHint.visible{display:flex}
 #overpassAbortBtn{background:none;border:none;color:var(--accent,#3d8eff);cursor:pointer;font-size:14px;padding:0 2px;line-height:1;opacity:.7;flex-shrink:0}
@@ -261,6 +260,7 @@ header{background:var(--surface);border-bottom:1px solid var(--border);padding:9
 .poi-btn.poi-active{background:rgba(61,142,255,.22);border-color:var(--accent)}
 #poiCatBtns{display:none;flex-direction:column;gap:4px}
 #poiCatBtns.open{display:flex}
+/* POI-Einstellungen (Zoom-Schwelle) */
 #poiSettingsPanel{position:absolute;top:12px;right:52px;background:rgba(18,22,32,.97);border:1px solid var(--border);border-radius:8px;padding:10px 12px;width:165px;z-index:1002;display:none;flex-direction:column;gap:6px;box-shadow:0 4px 16px rgba(0,0,0,.5)}
 #poiSettingsPanel.open{display:flex}
 .poi-set-lbl{font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.05em}
@@ -272,6 +272,7 @@ header{background:var(--surface);border-bottom:1px solid var(--border);padding:9
 .poi-km-btn{flex:1;background:var(--surface2);border:1px solid var(--border);color:var(--muted);border-radius:4px;cursor:pointer;font-size:11px;font-family:'DM Mono',monospace;padding:4px 0;transition:all .15s;line-height:1}
 .poi-km-btn:hover{background:var(--surface);color:var(--text)}
 .poi-km-btn.active{background:var(--accent);color:#fff;border-color:var(--accent)}
+/* Strecken-Modus Buttons */
 .poi-mode-btns{display:flex;gap:3px;margin:2px 0}
 .poi-mode-btn{flex:1;background:var(--surface2);border:1px solid var(--border);color:var(--muted);border-radius:4px;cursor:pointer;font-size:10px;font-weight:600;padding:4px 0;transition:all .15s;text-transform:uppercase;letter-spacing:.04em;font-family:'DM Sans',sans-serif}
 .poi-mode-btn:hover{background:var(--surface);color:var(--text)}
@@ -301,7 +302,7 @@ header{background:var(--surface);border-bottom:1px solid var(--border);padding:9
 </head>
 <body>
 <header>
-  <div class="logo">🚴 Radreise Planer<span class="logo-ver">v1.3.8</span></div>
+  <div class="logo">🚴 Radreise Planer<span class="logo-ver">v1.4.0</span></div>
   <div class="stats">
     <div class="stat"><span class="sl">Route</span><span class="sv" id="hdrRoute" style="color:var(--muted)">–</span></div>
     <div class="stat"><span class="sl">Gesamt</span><span class="sv" id="hdrTotal" style="color:var(--muted)">–</span></div>
@@ -403,6 +404,7 @@ header{background:var(--surface);border-bottom:1px solid var(--border);padding:9
         <button class="poi-mode-btn" data-mode="map"   onclick="setPoiMode('map')">Karte</button>
         <button class="poi-mode-btn" data-mode="route" onclick="setPoiMode('route')">Strecke</button>
       </div>
+      <!-- Karten-Modus -->
       <div id="poiMapControls">
         <div class="poi-set-lbl" style="margin-top:4px">Maßstabsbalken ≤</div>
         <div class="poi-km-btns">
@@ -414,6 +416,7 @@ header{background:var(--surface);border-bottom:1px solid var(--border);padding:9
         </div>
         <div class="poi-set-sub">km &nbsp;·&nbsp; Karte: <span id="poiCurrentKm">–</span></div>
       </div>
+      <!-- Strecken-Modus -->
       <div id="poiRouteControls" style="display:none">
         <div class="poi-set-lbl" style="margin-top:4px">Abstand von Route ≤</div>
         <div class="poi-km-btns">
@@ -776,7 +779,7 @@ function initMap() {
 
   leafletMap.on('moveend zoomend', () => {
     if (_epVisible) _scheduleElevProfile();
-    if (_activePois.size > 0) _schedulePoiRefresh();
+    if (_activePois.size > 0) _schedulePoiRefresh(); // beide Modi refreshen bei Pan/Zoom
     _updatePoiCurrentKm();
   });
 
@@ -945,8 +948,8 @@ async function saveTargets() {
       campsite: camp ? { name: camp.name, lat: camp.lat, lon: camp.lon, address: camp.address || '', dayguests: camp.dayguests, website: camp.website || null, dist_km: camp.dist_km || null } : null,
       isManual,
       manualIdx: st.campTarget._manualIdx ?? null,
-      tocamp: { ci: st.campTarget.ci, waypoints: st.campTarget.waypoints, routePts: st.campTarget.routePts, km: st.campTarget.km, branchIdx: st.campTarget.branchIdx },
-      fromPrev: si < NUM_STAGES - 1 && stages[si+1].campFromPrev ? { waypoints: stages[si+1].campFromPrev.waypoints, routePts: stages[si+1].campFromPrev.routePts, km: stages[si+1].campFromPrev.km, rejoinIdx: stages[si+1].campFromPrev.rejoinIdx } : null
+      tocamp: { ci: st.campTarget.ci, waypoints: st.campTarget.waypoints, routePts: st.campTarget.routePts, routeEles: st.campTarget.routeEles || [], km: st.campTarget.km, branchIdx: st.campTarget.branchIdx },
+      fromPrev: si < NUM_STAGES - 1 && stages[si+1].campFromPrev ? { waypoints: stages[si+1].campFromPrev.waypoints, routePts: stages[si+1].campFromPrev.routePts, routeEles: stages[si+1].campFromPrev.routeEles || [], km: stages[si+1].campFromPrev.km, rejoinIdx: stages[si+1].campFromPrev.rejoinIdx } : null
     };
   });
   try { await fetch('/api/targets', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(data) }); } catch {}
@@ -1249,12 +1252,14 @@ async function setManualAsTarget(si, midx, ev) {
     const branchIdx  = Math.max(stStartIdx, routeIdxAtKm(routeCumDist[nearIdx] - 0.6));
     const branchPt   = ROUTE_PTS[branchIdx];
     const wpTocamp   = [branchPt, [c.lat, c.lon]];
-    const { pts: detourPts }  = await brouterRoute(wpTocamp);
+    const { pts: detourPts, eles: detourEles }  = await brouterRoute(wpTocamp);
 
     if (stages[si].routingGen !== gen) { stages[si].routeLoading = false; return; } // cancelled while routing
 
     const stagePts   = [...ROUTE_PTS.slice(stStartIdx, branchIdx + 1), ...detourPts.slice(1)];
-    stages[si].campTarget = { ci: null, _manual: true, _manualIdx: midx, waypoints: wpTocamp, brouterPts: detourPts, routePts: stagePts, km: ptsKm(stagePts), branchIdx };
+    const stageEles_ = detourEles.length === detourPts.length
+      ? [...ROUTE_ELEVATIONS.slice(stStartIdx, branchIdx + 1), ...detourEles.slice(1)] : [];
+    stages[si].campTarget = { ci: null, _manual: true, _manualIdx: midx, waypoints: wpTocamp, brouterPts: detourPts, routePts: stagePts, routeEles: stageEles_, km: ptsKm(stagePts), branchIdx };
     if (si < NUM_STAGES - 1) {
       const stI1EndIdx = si + 1 < NUM_STAGES - 1 ? routeIdxAtKm(stageMainBoundaryKm(si + 1)) : ROUTE_PTS.length - 1;
       // Rejoin AHEAD of the branch so the return leg continues forward instead of
@@ -1265,12 +1270,14 @@ async function setManualAsTarget(si, midx, ev) {
       const rejoinIdx  = nearestRoutePt(c.lat, c.lon, fwdMinIdx, stI1EndIdx);
       const rejoinPt   = ROUTE_PTS[rejoinIdx];
       const wpReturn   = [[c.lat, c.lon], rejoinPt];
-      const { pts: returnPts }  = await brouterRoute(wpReturn);
+      const { pts: returnPts, eles: returnEles }  = await brouterRoute(wpReturn);
 
       if (stages[si].routingGen !== gen) { stages[si].routeLoading = false; return; } // cancelled while routing return leg
 
       const returnRoute= [...returnPts, ...ROUTE_PTS.slice(rejoinIdx + 1, stI1EndIdx + 1)];
-      stages[si+1].campFromPrev = { waypoints: wpReturn, brouterPts: returnPts, routePts: returnRoute, km: ptsKm(returnRoute), rejoinIdx };
+      const returnEles_= returnEles.length === returnPts.length
+        ? [...returnEles, ...ROUTE_ELEVATIONS.slice(rejoinIdx + 1, stI1EndIdx + 1)] : [];
+      stages[si+1].campFromPrev = { waypoints: wpReturn, brouterPts: returnPts, routePts: returnRoute, routeEles: returnEles_, km: ptsKm(returnRoute), rejoinIdx };
     }
   } catch(e) {
     if (stages[si].routingGen === gen) {
@@ -1550,8 +1557,8 @@ const OVERPASS_ENDPOINTS=[
   'https://overpass.kumi.systems/api/interpreter',
   'https://overpass.private.coffee/api/interpreter'
 ];
-const OVERPASS_TIMEOUT       = 30000;
-const OVERPASS_TIMEOUT_ROUTE = 75000;
+const OVERPASS_TIMEOUT       = 30000; // ms für normale Abfragen
+const OVERPASS_TIMEOUT_ROUTE = 75000; // ms für Strecken-Abfragen (around:Radius entlang Route)
 
 // ── Höhenprofil ──────────────────────────────────────────────────────────────
 const EP_SLOPE_SCALE = [
@@ -1827,12 +1834,13 @@ async function dismissSegmentRefresh() {
 }
 
 let _overpassActive = 0;
-let _overpassAbortCtl = null;
+let _overpassAbortCtl = null; // globaler AbortController für laufende Abfragen
 
 function abortOverpass() {
   if (_overpassAbortCtl) { _overpassAbortCtl.abort(); _overpassAbortCtl = null; }
   _overpassActive = 0;
   _overpassHintHide(true);
+  // Aktive POI-Layer leeren damit keine veralteten Marker bleiben
   _activePois.forEach(id => _poiLayers[id]?.clearLayers());
 }
 
@@ -1866,11 +1874,15 @@ async function overpassFetch(q, timeoutMs = OVERPASS_TIMEOUT){
   const userAbortSig = _overpassAbortCtl.signal;
   _overpassHintShow('OSM-Anfrage läuft…');
 
+  // Kurze Queries (<600 Zeichen) via GET — funktioniert zuverlässig mit dem Proxy.
+  // Lange Queries (around-Route) via POST — vermeidet URL-Längenlimit.
   const usePost = q.length > 600;
   const param   = '?data=' + encodeURIComponent(q);
 
   const ctls = OVERPASS_ENDPOINTS.map(() => new AbortController());
 
+  // mkOpts(i): kombiniert User-Abort + Timeout + den per-Request-Ctl
+  // → wenn ein Request gewinnt, bricht ctls[i].abort() die anderen wirklich ab
   const mkOpts = (i) => {
     const signals = [userAbortSig, AbortSignal.timeout(timeoutMs), ctls[i].signal];
     const signal  = typeof AbortSignal.any === 'function'
@@ -1889,7 +1901,7 @@ async function overpassFetch(q, timeoutMs = OVERPASS_TIMEOUT){
       OVERPASS_ENDPOINTS.map(async (ep, i) => {
         const r = await fetch(usePost ? ep : ep + param, mkOpts(i));
         if (!r.ok) throw new Error('HTTP ' + r.status);
-        ctls.forEach((c, j) => { if (j !== i) c.abort(); });
+        ctls.forEach((c, j) => { if (j !== i) c.abort(); }); // andere sofort abbrechen
         return r.json();
       })
     ).catch(() => null);
@@ -1906,7 +1918,7 @@ async function overpassFetch(q, timeoutMs = OVERPASS_TIMEOUT){
 
     if (location.protocol === 'file:')
       throw new Error('Datei als file:// geöffnet – bitte über lokalem Server öffnen:\npython -m http.server 3000\n→ http://localhost:3000/radreise_planer.html');
-    throw new Error('Overpass nicht erreichbar. Bitte Internetverbindung prüfen.');
+    throw new Error('Overpass (OSM-Datenbank) nicht erreichbar – evtl. Wartung oder Überlastung. Die Karte funktioniert, nur die POI-/Camping-Suche ist betroffen. Bitte später erneut versuchen.');
   } finally {
     _overpassActive--;
     _overpassAbortCtl = null;
@@ -2090,6 +2102,11 @@ async function offerTileDownload(segment, lat, lon) {
   });
 }
 
+/**
+ * Routet [from, to] und teilt bei >MAX_SEG_KM automatisch in Teilabschnitte.
+ * Zwischenpunkte werden per Luftlinie interpoliert und an BRouter übergeben.
+ * statusFn(i, total) wird vor jedem Teilsegment aufgerufen.
+ */
 const PLAN_MAX_SEG_KM = 250;
 
 async function routeWithAutoSplit(from, to, statusFn) {
@@ -2098,6 +2115,8 @@ async function routeWithAutoSplit(from, to, statusFn) {
     if (statusFn) statusFn(1, 1);
     return await brouterRoute([from, to], false, true);
   }
+
+  // Anzahl Teilsegmente berechnen und Zwischenpunkte linear interpolieren
   const numSegs   = Math.ceil(dist / PLAN_MAX_SEG_KM);
   const waypoints = [from];
   for (let i = 1; i < numSegs; i++) {
@@ -2139,12 +2158,11 @@ async function brouterRoute(waypoints, _retry = false, _suppressTileOffer = fals
     if (!_retry && !_suppressTileOffer && /no.*(route|data|segment)|routing.*missing|waypoint.*data/i.test(gj.error)) {
       const [lat, lon] = waypoints[0];
       const segment = latlonToSegment(lat, lon);
-      // Server fragen ob die Kachel fehlt
       try {
         const check = await fetch(`/api/segment-status/${segment}`).then(r => r.json());
         if (check.status !== 'ready') {
           const ok = await offerTileDownload(segment, lat, lon);
-          if (ok) return brouterRoute(waypoints, true); // Routing wiederholen
+          if (ok) return brouterRoute(waypoints, true);
         }
       } catch {}
     }
@@ -2196,13 +2214,15 @@ async function setAsTarget(si, ci) {
 
     // Shortest path: branch point → campsite  (2 waypoints only)
     const wpTocamp = [branchPt, [c.lat, c.lon]];
-    const { pts: detourPts } = await brouterRoute(wpTocamp);
+    const { pts: detourPts, eles: detourEles } = await brouterRoute(wpTocamp);
 
     if (stages[si].routingGen !== gen) { stages[si].routeLoading = false; return; } // cancelled while routing
 
     // Stage i: original route up to branch point + detour to camp
-    const stageIPts = [...ROUTE_PTS.slice(stStartIdx, branchIdx + 1), ...detourPts.slice(1)];
-    stages[si].campTarget = { ci, waypoints: wpTocamp, brouterPts: detourPts, routePts: stageIPts, km: ptsKm(stageIPts), branchIdx };
+    const stageIPts  = [...ROUTE_PTS.slice(stStartIdx, branchIdx + 1), ...detourPts.slice(1)];
+    const stageIEles = detourEles.length === detourPts.length
+      ? [...ROUTE_ELEVATIONS.slice(stStartIdx, branchIdx + 1), ...detourEles.slice(1)] : [];
+    stages[si].campTarget = { ci, waypoints: wpTocamp, brouterPts: detourPts, routePts: stageIPts, routeEles: stageIEles, km: ptsKm(stageIPts), branchIdx };
 
     // Stage i+1: rejoin original route AHEAD (never behind) of the branch point
     if (si < NUM_STAGES - 1) {
@@ -2219,13 +2239,15 @@ async function setAsTarget(si, ci) {
 
       // Shortest path: campsite → rejoin point  (2 waypoints only)
       const wpReturn = [[c.lat, c.lon], rejoinPt];
-      const { pts: returnPts } = await brouterRoute(wpReturn);
+      const { pts: returnPts, eles: returnEles } = await brouterRoute(wpReturn);
 
       if (stages[si].routingGen !== gen) { stages[si].routeLoading = false; return; } // cancelled while routing return leg
 
       // Stage i+1: BRouter return + rest of original route to stage end
-      const stageI1Pts = [...returnPts, ...ROUTE_PTS.slice(rejoinIdx + 1, stI1EndIdx + 1)];
-      stages[si+1].campFromPrev = { waypoints: wpReturn, brouterPts: returnPts, routePts: stageI1Pts, km: ptsKm(stageI1Pts), rejoinIdx };
+      const stageI1Pts  = [...returnPts, ...ROUTE_PTS.slice(rejoinIdx + 1, stI1EndIdx + 1)];
+      const stageI1Eles = returnEles.length === returnPts.length
+        ? [...returnEles, ...ROUTE_ELEVATIONS.slice(rejoinIdx + 1, stI1EndIdx + 1)] : [];
+      stages[si+1].campFromPrev = { waypoints: wpReturn, brouterPts: returnPts, routePts: stageI1Pts, routeEles: stageI1Eles, km: ptsKm(stageI1Pts), rejoinIdx };
     }
   } catch(e) {
     if (stages[si].routingGen === gen) { // only update error if not already cancelled
@@ -2432,11 +2454,38 @@ BROUTER_PROFILES.forEach(p => {
 // ─────────────────────────────────────────────────────────────────────────────
 // ELEVATION PROFILE
 // ─────────────────────────────────────────────────────────────────────────────
-function stageElevStats(i) {
-  if (!ROUTE_ELEVATIONS.length) return null;
+// Höhen-Array der tatsächlich gefahrenen Etappe INKL. Camp-Abstecher —
+// spiegelt stageRoutePts(), damit Höhenmeter zum echten Verlauf passen.
+// Fehlen für einen Abstecher die BRouter-Höhendaten (routeEles leer), fällt
+// der jeweilige Zweig auf den Hauptrouten-Abschnitt zurück.
+function stageEles(i) {
+  if (!ROUTE_ELEVATIONS.length) return [];
   const stStartIdx = i > 0 ? routeIdxAtKm(stageMainBoundaryKm(i - 1)) : 0;
   const stEndIdx   = i < NUM_STAGES - 1 ? routeIdxAtKm(stageMainBoundaryKm(i)) : ROUTE_ELEVATIONS.length - 1;
-  const eles = ROUTE_ELEVATIONS.slice(stStartIdx, stEndIdx + 1);
+  const st = stages[i];
+  const ct = st.campTarget, fp = st.campFromPrev;
+  const hasCT = ct?.routeEles?.length;
+  const hasFP = fp?.routeEles?.length;
+
+  if (hasFP && hasCT) {
+    const returnLen = Math.max(1, fp.routeEles.length - (stEndIdx - fp.rejoinIdx));
+    const tocampOff = ct.branchIdx - stStartIdx + 1;
+    return [
+      ...fp.routeEles.slice(0, returnLen),
+      ...ROUTE_ELEVATIONS.slice(fp.rejoinIdx + 1, ct.branchIdx + 1),
+      ...ct.routeEles.slice(tocampOff)
+    ];
+  } else if (hasFP) {
+    return fp.routeEles;
+  } else if (hasCT) {
+    return ct.routeEles;
+  }
+  return ROUTE_ELEVATIONS.slice(stStartIdx, stEndIdx + 1);
+}
+
+function stageElevStats(i) {
+  const eles = stageEles(i);
+  if (eles.length < 2) return null;
   let up = 0, down = 0;
   for (let j = 1; j < eles.length; j++) {
     const d = eles[j] - eles[j-1];
@@ -2587,9 +2636,11 @@ function exportTotalRouteGPX() {
   xml += '<gpx version="1.1" creator="Radreise Planer" xmlns="http://www.topografix.com/GPX/1/1">\n';
   xml += `<metadata><name>${esc(ROUTE_NAME)}</name></metadata>\n`;
 
+  // Startpunkt
   const [sLat, sLon] = ROUTE_PTS[0];
   xml += `<wpt lat="${sLat.toFixed(6)}" lon="${sLon.toFixed(6)}"><name>${esc('Start: ' + (ROUTE_NAME.split('→')[0]?.trim() || 'Start'))}</name></wpt>\n`;
 
+  // Waypoints (Campingplatz oder Etappenende)
   for (let i = 0; i < NUM_STAGES; i++) {
     const st = stages[i];
     if (st.campTarget != null) {
@@ -2610,6 +2661,7 @@ function exportTotalRouteGPX() {
     }
   }
 
+  // Gesamtroute als ein einzelner Track
   xml += `<trk><name>${esc(ROUTE_NAME)}</name><trkseg>\n`;
   for (const [lat, lon] of ROUTE_PTS)
     xml += `<trkpt lat="${lat.toFixed(6)}" lon="${lon.toFixed(6)}"/>\n`;
@@ -2971,6 +3023,7 @@ async function planModeClick(e) {
       const lastM = planMarkers.pop();
       if (lastM) leafletMap.removeLayer(lastM);
 
+      // Segment-Status abfragen um Ursache einzugrenzen
       const segFrom = latlonToSegment(from[0], from[1]);
       const segTo   = latlonToSegment(to[0],   to[1]);
       const segsNeeded = [...new Set([segFrom, segTo])];
@@ -2982,6 +3035,7 @@ async function planModeClick(e) {
         } catch { missing.push(seg); }
       }
 
+      // Distanz abschätzen
       const distKm = Math.round(hav(from[0], from[1], to[0], to[1]));
 
       let toastMsg;
@@ -2990,6 +3044,7 @@ async function planModeClick(e) {
       } else {
         toastMsg = `⚠ BRouter: Route nicht berechnet (${distKm} km) — Routing-Daten oder Profil prüfen`;
       }
+      // Toast statt planStatus — updatePlanOverlay() überschreibt planStatus sonst sofort
       _overpassHintShow(toastMsg, 7000);
 
       if (missing.length > 0) {
@@ -3025,6 +3080,7 @@ function rebuildPlanRoutePts() {
     ? L.polyline(planRoutePts, {color:'#3d8eff',weight:3,opacity:0.85}).addTo(leafletMap)
     : null;
   // Nach jedem neuen Segment auf den letzten Abschnitt zoomen
+  // damit man sieht dass die Route wirklich Straßen folgt (nicht als Strich erscheint)
   if (planPolyline && leafletMap && planSegments.length > 0) {
     const lastSeg = planSegments[planSegments.length - 1];
     if (lastSeg && lastSeg.length >= 2) {
@@ -3087,10 +3143,11 @@ function captureTourState(name) {
       isManual,
       manualIdx: st.campTarget._manualIdx ?? null,
       tocamp: { ci:st.campTarget.ci, waypoints:st.campTarget.waypoints, routePts:st.campTarget.routePts,
-                km:st.campTarget.km, branchIdx:st.campTarget.branchIdx },
+                routeEles:st.campTarget.routeEles || [], km:st.campTarget.km, branchIdx:st.campTarget.branchIdx },
       fromPrev: si < NUM_STAGES - 1 && stages[si+1].campFromPrev
         ? { waypoints:stages[si+1].campFromPrev.waypoints,
             routePts:stages[si+1].campFromPrev.routePts,
+            routeEles:stages[si+1].campFromPrev.routeEles || [],
             km:stages[si+1].campFromPrev.km,
             rejoinIdx:stages[si+1].campFromPrev.rejoinIdx }
         : null
@@ -3538,21 +3595,43 @@ async function applyReroute() {
     drawCustomRoutes(); render(); drawMarkers();
 
   } catch(e) {
+    document.getElementById('rerouteStageList').insertAdjacentHTML('afterend',
+      `<div style="font-size:10px;color:var(--red);margin-top:6px">✗ ${e.message}</div>`);
+  } finally {
     btn.textContent = '↺ Berechnen';
     btn.disabled = false;
-    const errEl = document.getElementById('rerouteStageList');
-    errEl.insertAdjacentHTML('afterend',
-      `<div style="font-size:10px;color:var(--red);margin-top:6px">✗ ${e.message}</div>`);
-    return;
   }
-
-  btn.textContent = '↺ Berechnen';
-  btn.disabled = false;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
 // ROUTE BEARBEITEN — Wegpunkte auf Routenlinie setzen, verschieben, löschen
 // ─────────────────────────────────────────────────────────────────────────────
+
+const ROUTE_EDIT_LOCAL_KM = 5;
+
+function _refreshRouteEditView() {
+  updateHeaderStats();
+  buildMainRouteLayer();
+  clearRouteEditMarkers();
+  drawRouteEditMarkers();
+  drawCustomRoutes(); render(); drawMarkers();
+}
+
+function _syncHistoryBtns() {
+  const u = document.getElementById('routeEditUndoBtn');
+  const r = document.getElementById('routeEditRedoBtn');
+  if (u) u.disabled = !routeEditHistory.length;
+  if (r) r.disabled = !routeEditRedoStack.length;
+}
+
+async function _stepHistory(pop, push) {
+  if (!pop.length) return;
+  push.push(_captureRouteEditState());
+  _applyRouteEditState(pop.pop());
+  _refreshRouteEditView();
+  _syncHistoryBtns();
+  await saveRouteData();
+}
 
 let routeEditMode    = false;
 let routeEditWps     = [];       // Zwischenpunkte [[lat,lon],...]
@@ -3602,8 +3681,7 @@ function _exitRouteEditMode() {
   if (bar) bar.style.display = 'none';
   if (btn) btn.classList.remove('active');
   if (leg) leg.style.display = 'none';
-  const undoBtn = document.getElementById('routeEditUndoBtn');
-  if (undoBtn) undoBtn.disabled = true;
+  _syncHistoryBtns();
 }
 
 function onMapClickRouteEdit(e) {
@@ -3627,9 +3705,9 @@ async function _insertRouteWp(lat, lon) {
   const anchorFrom = anchorIdxs[insertAt];
   const anchorTo   = anchorIdxs[insertAt + 1];
 
-  // Limit splice to ±LOCAL_KM around the click — prevents rerouting the whole route
+  // Limit splice to ±ROUTE_EDIT_LOCAL_KM around the click — prevents rerouting the whole route
   // when no intermediate waypoints exist yet (anchorFrom=0, anchorTo=last).
-  const LOCAL_KM = 5;
+  const LOCAL_KM = ROUTE_EDIT_LOCAL_KM;
   const clickKm  = routeCumDist[clickIdx];
   const fromKm   = Math.max(routeCumDist[anchorFrom], clickKm - LOCAL_KM);
   const toKm     = Math.min(routeCumDist[anchorTo],   clickKm + LOCAL_KM);
@@ -3672,14 +3750,6 @@ async function _rerouteAndSplice(fromIdx, toIdx, brouterWps, prevWps) {
 
   try {
     const { pts: newPts, eles: newEles } = await brouterRoute(brouterWps);
-
-    routeEditHistory.push({
-      wps: prevWps ?? [], pts: snapPts, eles: snapEles,
-      total_km: snapKm, base: snapBase, adjustKms: snapAdjKms, stageEnds: snapEnds
-    });
-    routeEditRedoStack = [];
-    const redoBtn = document.getElementById('routeEditRedoBtn');
-    if (redoBtn) redoBtn.disabled = true;
 
     // Splice new segment — only fromIdx..toIdx is replaced
     ROUTE_PTS        = [...ROUTE_PTS.slice(0, fromIdx),  ...newPts,  ...ROUTE_PTS.slice(toIdx + 1)];
@@ -3733,15 +3803,15 @@ async function _rerouteAndSplice(fromIdx, toIdx, brouterWps, prevWps) {
       }
     });
 
-    updateHeaderStats();
-    buildMainRouteLayer();
-    clearRouteEditMarkers();
-    drawRouteEditMarkers();
-    drawCustomRoutes(); render(); drawMarkers();
+    routeEditHistory.push({
+      wps: prevWps ?? [], pts: snapPts, eles: snapEles,
+      total_km: snapKm, base: snapBase, adjustKms: snapAdjKms, stageEnds: snapEnds
+    });
+    routeEditRedoStack = [];
 
+    _refreshRouteEditView();
     if (statusEl) statusEl.textContent = '';
-    const undoBtn = document.getElementById('routeEditUndoBtn');
-    if (undoBtn) undoBtn.disabled = false;
+    _syncHistoryBtns();
 
   } catch (e) {
     if (prevWps !== undefined) routeEditWps = prevWps;
@@ -3770,7 +3840,7 @@ function drawRouteEditMarkers() {
     m.addTo(leafletMap);
     m.bindTooltip('Wegpunkt · Doppelklick zum Löschen', { direction: 'top', offset: [0, -10] });
 
-    const LOCAL_KM = 5;
+    const LOCAL_KM = ROUTE_EDIT_LOCAL_KM;
     let dragPrev = null;
     m.on('dragstart', () => {
       dragPrev = routeEditWps.map(w => w.slice());
@@ -3851,39 +3921,8 @@ function _applyRouteEditState(s) {
   stages.forEach(st => { st.campTarget = null; st.campFromPrev = null; st.routeLoading = false; });
 }
 
-async function undoRouteEdit() {
-  if (!routeEditHistory.length) return;
-  routeEditRedoStack.push(_captureRouteEditState());
-  _applyRouteEditState(routeEditHistory.pop());
-
-  updateHeaderStats();
-  buildMainRouteLayer();
-  clearRouteEditMarkers();
-  drawRouteEditMarkers();
-  drawCustomRoutes(); render(); drawMarkers();
-
-  document.getElementById('routeEditUndoBtn').disabled = routeEditHistory.length === 0;
-  document.getElementById('routeEditRedoBtn').disabled = false;
-
-  await saveRouteData();
-}
-
-async function redoRouteEdit() {
-  if (!routeEditRedoStack.length) return;
-  routeEditHistory.push(_captureRouteEditState());
-  _applyRouteEditState(routeEditRedoStack.pop());
-
-  updateHeaderStats();
-  buildMainRouteLayer();
-  clearRouteEditMarkers();
-  drawRouteEditMarkers();
-  drawCustomRoutes(); render(); drawMarkers();
-
-  document.getElementById('routeEditUndoBtn').disabled = false;
-  document.getElementById('routeEditRedoBtn').disabled = routeEditRedoStack.length === 0;
-
-  await saveRouteData();
-}
+async function undoRouteEdit() { await _stepHistory(routeEditHistory,   routeEditRedoStack); }
+async function redoRouteEdit()  { await _stepHistory(routeEditRedoStack, routeEditHistory); }
 
 // ── OSM Campingplatz-Overlay ──────────────────────────────────────────────────
 // ── Feature 9: Mobile Sidebar ────────────────────────────────────────────────
@@ -3923,7 +3962,7 @@ let   _poiTimer   = null;
 const _POI_KM_STEPS = [1, 2, 3, 5, 10];
 let _poiMaxKm  = _POI_KM_STEPS.includes(parseInt(localStorage.getItem('poiMaxKm')))
   ? parseInt(localStorage.getItem('poiMaxKm')) : 10;
-let _poiMode   = localStorage.getItem('poiMode') || 'map';
+let _poiMode   = localStorage.getItem('poiMode') || 'map';  // 'map' | 'route'
 let _poiRouteKm = [1,2,3,4,5].includes(parseInt(localStorage.getItem('poiRouteKm')))
   ? parseInt(localStorage.getItem('poiRouteKm')) : 2;
 
@@ -3961,17 +4000,18 @@ function _updatePoiKmBtns() {
   document.querySelectorAll('.poi-mode-btn').forEach(b => b.classList.toggle('active', b.dataset.mode === _poiMode));
 }
 
-function _resetPoiCat(id) {
-  _poiLayers[id]?.clearLayers();
-  delete _poiSeenIds[id];
-  Object.keys(_poiCache).forEach(k => { if (k.startsWith(`map|${id}|`) || k.startsWith(`route|${id}|`)) delete _poiCache[k]; });
-}
-
 function setPoiMaxKm(km) {
   _poiMaxKm = km;
   localStorage.setItem('poiMaxKm', km);
   _updatePoiKmBtns();
   _activePois.forEach(id => { _resetPoiCat(id); _fetchPoiCat(id); });
+}
+
+// Kategorie vollständig zurücksetzen (Layer + akkumulierte IDs + Cache)
+function _resetPoiCat(id) {
+  _poiLayers[id]?.clearLayers();
+  delete _poiSeenIds[id];
+  Object.keys(_poiCache).forEach(k => { if (k.startsWith(`map|${id}|`) || k.startsWith(`route|${id}|`)) delete _poiCache[k]; });
 }
 
 function setPoiRouteKm(km) {
@@ -3998,6 +4038,7 @@ function _initPoiSettings() {
 
 function togglePoiPanel() {
   document.getElementById('poiCatBtns')?.classList.toggle('open');
+  // Einstellungs-Panel schließen wenn Hauptpanel geschlossen wird
   if (!document.getElementById('poiCatBtns')?.classList.contains('open')) {
     document.getElementById('poiSettingsPanel')?.classList.remove('open');
   }
@@ -4019,14 +4060,18 @@ function _schedulePoiRefresh(delay = 350) {
   _poiTimer = setTimeout(() => { _activePois.forEach(id => _fetchPoiCat(id)); }, delay);
 }
 
+// Bereits hinzugefügte OSM-IDs pro Kategorie — verhindert Duplikate beim Scrollen
 const _poiSeenIds = {};
 
+// Gemeinsamer Marker-Renderer: akkumuliert Marker statt bei jedem Pan zu löschen.
+// Neue Punkte werden per OSM-ID dedupliziert.
 function _renderPoiMarkers(id, cat, elements, borderColor) {
   if (!_poiLayers[id]) _poiLayers[id] = L.layerGroup().addTo(leafletMap);
   if (!_poiSeenIds[id]) _poiSeenIds[id] = new Set();
+  // kein clearLayers() — vorhandene Marker bleiben erhalten
   elements.forEach(el => {
     const elKey = `${el.type || 'n'}${el.id}`;
-    if (_poiSeenIds[id].has(elKey)) return;
+    if (_poiSeenIds[id].has(elKey)) return;   // Duplikat überspringen
     _poiSeenIds[id].add(elKey);
     const lat = el.lat ?? el.center?.lat;
     const lon = el.lon ?? el.center?.lon;
@@ -4066,6 +4111,7 @@ async function _fetchPoiCat(id) {
   if (!cat || !leafletMap) return;
   if (_poiMode === 'route') return _fetchPoiCatRoute(id, cat);
 
+  // ── Karten-Modus ─────────────────────────────────────────────────────────
   const _visKm = Math.round(_mapVisibleKm());
   if (_visKm > _poiMaxKm) {
     _poiLayers[id]?.clearLayers();
@@ -4097,16 +4143,21 @@ async function _fetchPoiCat(id) {
     _renderPoiMarkers(id, cat, elements, 'rgba(255,255,255,.55)');
     if (elements.length === 0)
       _overpassHintShow(`${cat.icon} ${cat.label}: keine im aktuellen Bereich`, 3500);
-  } catch(err) { console.warn('POI fetch:', err); }
+  } catch(err) {
+    console.warn('POI fetch:', err);
+    _overpassHintShow(`⚠ ${cat.icon} ${cat.label}: Overpass nicht erreichbar (Wartung/Überlastung?) — Karte läuft, später erneut versuchen`, 5000);
+  }
 }
 
+// Gibt die sichtbaren Routenpunkte im aktuellen Kartenausschnitt zurück
 function _visibleRoutePts() {
   if (!leafletMap || !ROUTE_PTS || ROUTE_PTS.length < 2) return [];
-  const b = leafletMap.getBounds().pad(0.1);
+  const b = leafletMap.getBounds().pad(0.1); // 10% Puffer damit Randpunkte nicht fehlen
   return ROUTE_PTS.filter(p => b.contains([p[0], p[1]]));
 }
 
 async function _fetchPoiCatRoute(id, cat) {
+  // ── Strecken-Modus: nur sichtbarer Routenabschnitt ───────────────────────
   if (!ROUTE_PTS || ROUTE_PTS.length < 2) {
     _poiLayers[id]?.clearLayers();
     _overpassHintShow('📍 Keine Route geladen — GPX importieren', 2500);
@@ -4120,6 +4171,7 @@ async function _fetchPoiCatRoute(id, cat) {
     return;
   }
 
+  // Cache-Key mit gerundeter Bbox → gleiche Ansicht = gleiche Ergebnisse
   const b = leafletMap.getBounds();
   const g = 0.05;
   const s = (Math.floor(b.getSouth()/g)*g).toFixed(3);
@@ -4132,11 +4184,12 @@ async function _fetchPoiCatRoute(id, cat) {
   try {
     let elements = _poiCache[ckey];
     if (elements === undefined) {
+      // Sichtbare Punkte auf max. 60 reduzieren — Query bleibt klein
       const step   = Math.max(1, Math.floor(visPts.length / 60));
       const pts    = visPts.filter((_, i) => i % step === 0);
       const arnd   = `around:${_poiRouteKm * 1000},${pts.map(p => `${p[0]},${p[1]}`).join(',')}`;
       const q = `[out:json][timeout:25];${cat.query(arnd)}${outClause}`;
-      const data = await overpassFetch(q);
+      const data = await overpassFetch(q); // normale 30s genügen
       elements = data?.elements || [];
       _poiCache[ckey] = elements;
       const keys = Object.keys(_poiCache);
@@ -4173,7 +4226,7 @@ function _shelterPopupHtml(t, lat, lon) {
   </div>`;
 }
 
-// _campOsmPopupHtml: wird von campsite-POI-Kategorie als renderPopup genutzt
+
 function _campOsmPopupHtml(t, lat, lon) {
   const name    = t.name || 'Campingplatz';
   const street  = t['addr:street']
@@ -4200,8 +4253,11 @@ function _campOsmPopupHtml(t, lat, lon) {
                  : fee === 'no'  ? 'Kostenlos'
                  : fee           ? fee : null;
 
+  const nameArg = JSON.stringify(name).replace(/&/g,'&amp;').replace(/"/g,'&quot;').replace(/</g,'&lt;');
+
   return `<div class="co-inner">
     <div class="co-title">${name}</div>
+    <button onclick="routeToOsmCamp(${lat}, ${lon}, ${nameArg})" title="Ändert die Etappe, deren aktuelles Ende am nächsten liegt" style="width:100%;margin:2px 0 8px;background:var(--accent,#3d8eff);color:#fff;border:none;border-radius:5px;padding:7px;cursor:pointer;font-size:11px;font-weight:600;font-family:inherit">⛳ Route hierher (nächste Etappe)</button>
     ${row('📍', [street, city].filter(Boolean).join(', '))}
     ${row('📞', phone ? `<a href="tel:${phone}">${phone}</a>` : null)}
     ${row('✉️', email ? `<a href="mailto:${email}">${email}</a>` : null)}
@@ -4222,6 +4278,49 @@ function _campOsmPopupHtml(t, lat, lon) {
   </div>`;
 }
 
+// Aktuelle End-Position einer Etappe (Camp-Ziel falls gesetzt, sonst Etappengrenze).
+function stageEndLatLon(i) {
+  const st = stages[i];
+  if (st?.campTarget) {
+    const c = st.campTarget._manual
+      ? manualCamps[i]?.[st.campTarget._manualIdx]
+      : st.campsites?.[st.campTarget.ci];
+    if (c?.lat && c?.lon) return [c.lat, c.lon];
+  }
+  if (!ROUTE_PTS.length) return null;
+  const idx = Math.min(routeIdxAtKm(stageMainBoundaryKm(i)), ROUTE_PTS.length - 1);
+  return ROUTE_PTS[idx];
+}
+
+// POI-Campingplatz aus der Karte direkt als Etappenziel setzen: ändert die
+// Etappe, deren aktuelles Ende am nächsten liegt (reroute inkl. km + Höhenmeter).
+async function routeToOsmCamp(lat, lon, name) {
+  if (!ROUTE_PTS.length) { alert('Keine Route geladen'); return; }
+  if (leafletMap) leafletMap.closePopup();
+
+  let si = -1, bestD = Infinity;
+  for (let i = 0; i < NUM_STAGES; i++) {
+    const e = stageEndLatLon(i);
+    if (!e) continue;
+    const d = hav(lat, lon, e[0], e[1]);
+    if (d < bestD) { bestD = d; si = i; }
+  }
+  if (si < 0) return;
+
+  if (!manualCamps[si]) manualCamps[si] = [];
+  let midx = manualCamps[si].findIndex(c =>
+    Math.abs(c.lat - lat) < 1e-6 && Math.abs(c.lon - lon) < 1e-6);
+  if (midx < 0) {
+    manualCamps[si].push({ name: name || 'Campingplatz', lat, lon, address: '',
+      website: null, dayguests: 'unclear', note: null,
+      dist_km: Math.round(bestD * 10) / 10, _manual: true });
+    midx = manualCamps[si].length - 1;
+    await saveManualCamps();
+  }
+  focusStage(si);
+  await setManualAsTarget(si, midx);
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 
 Promise.all([wsInit(), loadRoute(), loadManualCamps()]).then(async () => {
@@ -4238,11 +4337,10 @@ Promise.all([wsInit(), loadRoute(), loadManualCamps()]).then(async () => {
       const r = await fetch(`/api/tours/${lastId}`);
       if (r.ok) {
         const data = await r.json();
+        // Plausibilitätsprüfung: Route muss echte Punkte haben (nicht nur Start+Ende)
         const pts = data.route_sampled || [];
         if (pts.length < 10) {
-          // Ungültige Tour (z.B. nur 2 Punkte durch BRouter-Fallback) — löschen
-          console.warn(`Auto-Load: Tour "${data.name}" hat nur ${pts.length} Routenpunkte — wird gelöscht`);
-          await fetch(`/api/tours/${lastId}`, { method: 'DELETE' }).catch(() => {});
+          console.warn(`Auto-Load: Tour "${data.name}" hat nur ${pts.length} Routenpunkte — übersprungen`);
           localStorage.removeItem('lastTourId');
         } else {
           currentTourId   = lastId;
@@ -4250,7 +4348,7 @@ Promise.all([wsInit(), loadRoute(), loadManualCamps()]).then(async () => {
           await restoreTourState(data);
         }
       } else {
-        localStorage.removeItem('lastTourId');
+        localStorage.removeItem('lastTourId'); // Tour existiert nicht mehr
       }
     } catch { /* Fehler ignorieren, normaler Start */ }
   }

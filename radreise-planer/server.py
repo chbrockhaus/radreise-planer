@@ -19,6 +19,7 @@ import sys
 import threading
 import urllib.request
 import urllib.parse
+import urllib.error
 import datetime
 
 def log(msg: str) -> None:
@@ -43,6 +44,8 @@ TOURS_DIR              = os.path.join(DATA_DIR, 'tours')
 SEGMENTS_REFRESHED_FILE = os.path.join(DATA_DIR, 'segments_refreshed.json')
 
 BROUTER_PORT    = 17777
+OVERPASS_TIMEOUT      = 8    # Sekunden pro Endpoint (GET) – schnell scheitern
+OVERPASS_TIMEOUT_POST = 15   # POST (around-Route) darf etwas länger dauern
 APP_DIR         = os.path.dirname(os.path.abspath(__file__))
 TILE_CACHE_DIR  = os.path.join(DATA_DIR, 'tile_cache')
 
@@ -404,27 +407,35 @@ class Handler(http.server.SimpleHTTPRequestHandler):
     def _proxy_overpass(self):
         """GET-Variante: leitet ?data=... weiter (kurze Abfragen)."""
         qs = self.path[len('/api/overpass'):]  # ?data=...
+        last_err = 'keine Antwort'
         for ep in self._OVERPASS_EPS:
+            host = ep.split('/')[2]
             try:
                 req = urllib.request.Request(
                     ep + qs,
                     headers={'User-Agent': 'RadreisePlaner/1.0', 'Accept': 'application/json'}
                 )
-                with urllib.request.urlopen(req, timeout=35) as resp:
+                with urllib.request.urlopen(req, timeout=OVERPASS_TIMEOUT) as resp:
                     data = resp.read()
                 self.send_response(200)
                 self.send_header('Content-Type', 'application/json')
                 self._cors()
                 self.end_headers()
-                self.wfile.write(data)
+                self._safe_write(data)
                 return
-            except Exception:
+            except urllib.error.HTTPError as e:
+                last_err = f'{host}: HTTP {e.code}'
                 continue
-        self._json(502, {'error': 'Alle Overpass-Endpoints nicht erreichbar'})
+            except Exception as e:
+                last_err = f'{host}: {type(e).__name__}'
+                continue
+        self._json(502, {'error': f'Overpass nicht erreichbar ({last_err})'})
 
     def _proxy_overpass_post(self, body: bytes):
         """POST-Variante: body = b'data=<url-encoded-query>' (lange around-Abfragen)."""
+        last_err = 'keine Antwort'
         for ep in self._OVERPASS_EPS:
+            host = ep.split('/')[2]
             try:
                 req = urllib.request.Request(
                     ep,
@@ -437,17 +448,21 @@ class Handler(http.server.SimpleHTTPRequestHandler):
                     },
                     method='POST'
                 )
-                with urllib.request.urlopen(req, timeout=65) as resp:
+                with urllib.request.urlopen(req, timeout=OVERPASS_TIMEOUT_POST) as resp:
                     data = resp.read()
                 self.send_response(200)
                 self.send_header('Content-Type', 'application/json')
                 self._cors()
                 self.end_headers()
-                self.wfile.write(data)
+                self._safe_write(data)
                 return
-            except Exception:
+            except urllib.error.HTTPError as e:
+                last_err = f'{host}: HTTP {e.code}'
                 continue
-        self._json(502, {'error': 'Alle Overpass-Endpoints nicht erreichbar'})
+            except Exception as e:
+                last_err = f'{host}: {type(e).__name__}'
+                continue
+        self._json(502, {'error': f'Overpass nicht erreichbar ({last_err})'})
 
     def _proxy_brouter(self):
         qs  = self.path[len('/api/brouter'):]
@@ -464,6 +479,13 @@ class Handler(http.server.SimpleHTTPRequestHandler):
             self._json(502, {'error': str(e)})
 
     # ── Hilfsmethoden ─────────────────────────────────────────────────────────
+    def _safe_write(self, data):
+        # Client kann abbrechen (paralleles Promise.any, Navigation) – kein Traceback.
+        try:
+            self.wfile.write(data)
+        except (ConnectionAbortedError, ConnectionResetError, BrokenPipeError):
+            pass
+
     def _json(self, code, obj):
         data = json.dumps(obj, ensure_ascii=False).encode()
         self.send_response(code)
@@ -471,7 +493,7 @@ class Handler(http.server.SimpleHTTPRequestHandler):
         self.send_header('Cache-Control', 'no-store')
         self._cors()
         self.end_headers()
-        self.wfile.write(data)
+        self._safe_write(data)
 
     def _cors(self):
         self.send_header('Access-Control-Allow-Origin', '*')
@@ -496,6 +518,12 @@ if __name__ == '__main__':
 
     class ThreadingHTTPServer(socketserver.ThreadingMixIn, http.server.HTTPServer):
         daemon_threads = True  # Threads sterben mit dem Server
+        def handle_error(self, request, client_address):
+            # Vom Client abgebrochene Verbindungen sind normal – kein Traceback.
+            exc = sys.exc_info()[1]
+            if isinstance(exc, (ConnectionAbortedError, ConnectionResetError, BrokenPipeError)):
+                return
+            super().handle_error(request, client_address)
 
     srv = ThreadingHTTPServer(('', PORT), Handler)
     log(f'  ✓ Bereit: http://localhost:{PORT}/')

@@ -1,5 +1,11 @@
 # Changelog — Radreise Planer
 
+## v1.4.0 (2026-07-18)
+- **Neu: Campingplatz direkt aus der Karte zur Etappe routen.** Im Popup eines Camp-POI gibt es den Button „⛳ Route hierher (nächste Etappe)". Er ändert automatisch die Etappe, deren aktuelles Ende am nächsten liegt, und routet dorthin.
+- **Fix: Höhenmeter berücksichtigen jetzt den Camp-Abstecher.** Bisher zeigte die Sidebar beim Umrouten zu einem Camp nur die Höhenmeter der Hauptroute. Jetzt werden die BRouter-Höhendaten des Abstechers gespeichert und die Etappen-Höhenmeter (↑/↓) korrekt aus dem tatsächlich gefahrenen Verlauf berechnet (auch km waren schon korrekt). Gilt für Such-Camps und manuelle Camps, inkl. Persistenz in gespeicherten Touren.
+- **Overpass-Härtung:** Bei Overpass-Ausfall scheitert die Abfrage schnell (Timeout 8s statt 32s) mit klarer Meldung in der UI („Overpass nicht erreichbar – Karte läuft, später erneut versuchen") statt langem Hängen. Server-Log wird nicht mehr mit Verbindungsabbruch-Tracebacks geflutet.
+- Code-Sync: Addon-HTML mit der refaktorierten lokalen Version zusammengeführt (Route-Bearbeiten-Helfer).
+
 ## v1.3.8 (2026-07-18)
 - Fix: Beim Camp-Abstecher fuhr die Route am Abzweig erst ein Stück über die Straßen-Abbiegung hinaus und dann zurück. Der Abzweig wird jetzt ~0,6 km *vor* dem nächstgelegenen Punkt angesetzt, sodass BRouter die Abbiegung natürlich anfährt (kein U-Turn). Hinweis: Ist der Campingplatz nur über eine Stichstraße erreichbar, bleibt das Hin- und Zurück auf dieser Zufahrt physikalisch bestehen.
 
