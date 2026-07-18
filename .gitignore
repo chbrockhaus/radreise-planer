@@ -10,3 +10,5 @@ desktop.ini
 # Temporäre Dateien
 *.tmp
 *.log
+__pycache__/
+*.pyc
