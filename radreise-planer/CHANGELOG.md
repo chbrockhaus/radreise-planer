@@ -1,5 +1,8 @@
 # Changelog — Radreise Planer
 
+## v1.4.4 (2026-07-18)
+- Fix: Der Ziel-Marker „Z" blieb am alten Ziel stehen, wenn für die letzte Etappe ein Campingplatz als Ziel gesetzt wurde. Die letzte Etappe hat keinen eigenen nummerierten Marker — sie wird allein durch „Z" dargestellt, und dessen Position war fest auf das Routenende verdrahtet. „Z" wandert jetzt zum Campingplatz (Tooltip zeigt den Camp-Namen).
+
 ## v1.4.3 (2026-07-18)
 - Fix: Beim Neuberechnen **aller** Etappen gingen verschobene Etappengrenzen verloren. Ursache: `STAGE_ENDS` wird beim Verschieben einer Grenze nicht mitgeführt (dort ändert sich nur `adjustKm`), diente aber als Wegpunkt-Quelle — zusätzlich wurden die Grenzen danach wieder gleichmäßig verteilt. Jetzt wird durch die **tatsächlichen** Grenzen geroutet und diese bleiben danach erhalten (Etappenlängen aus den echten Abständen abgeleitet).
 
