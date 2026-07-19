@@ -1,5 +1,8 @@
 # Changelog — Radreise Planer
 
+## v1.8.0 (2026-07-18)
+- **Neu: Fehlende Höhendaten automatisch per BRouter ergänzen.** Fehlt einer importierten GPX-Datei das Höhenprofil, erscheint eine Checkbox „⛰ Höhendaten per BRouter ergänzen" (vorausgewählt) — die Route wird dabei entlang der aufgezeichneten Punkte nachgeroutet, BRouters Geländemodell liefert die Höhe mit. Funktioniert im Single-GPX-Import **und** im Mehrfach-Etappen-Import (dort nur für die Dateien, denen tatsächlich Höhendaten fehlen — vorhandene Profile bleiben unangetastet). Ein einzelner unroutbarer Zwischenpunkt lässt dabei nicht den ganzen Abschnitt scheitern: bei einem Fehler wird die Wegpunktdichte automatisch halbiert und erneut versucht.
+
 ## v1.7.0 (2026-07-18)
 - **Neu: Mehrere einzelne Etappen-GPX zu einer Reise importieren.** Neuer Tab „🧩 Etappen importieren" im Tour-Dialog: pro Etappe eine eigene GPX-Datei hochladen (Mehrfachauswahl), Reihenfolge per ▲▼ anpassen, Etappen umbenennen oder entfernen. Jede Datei wird exakt eine Etappe — die Etappengrenzen liegen an den Datei-Grenzen, nicht gleichmäßig verteilt. Schließen zwei Dateien nicht nahtlos an (Lücke > 50 m), wird die Verbindung automatisch per BRouter berechnet.
 - Intern: Vereinfachung (Douglas-Peucker) und GPS-Lücken-Reparatur aus dem bestehenden Single-GPX-Import wurden als wiederverwendbare Bausteine extrahiert, ohne das bisherige Verhalten zu verändern.

@@ -304,7 +304,7 @@ header{background:var(--surface);border-bottom:1px solid var(--border);padding:9
 </head>
 <body>
 <header>
-  <div class="logo">🚴 Radreise Planer<span class="logo-ver">v1.7.0</span></div>
+  <div class="logo">🚴 Radreise Planer<span class="logo-ver">v1.8.0</span></div>
   <div class="stats">
     <div class="stat"><span class="sl">Route</span><span class="sv" id="hdrRoute" style="color:var(--muted)">–</span></div>
     <div class="stat"><span class="sl">Gesamt</span><span class="sv" id="hdrTotal" style="color:var(--muted)">–</span></div>
@@ -574,7 +574,11 @@ header{background:var(--surface);border-bottom:1px solid var(--border);padding:9
         <div style="font-size:10px;color:var(--muted)">oder klicken zum Auswählen</div>
       </div>
       <input id="gpxFileInput" type="file" accept=".gpx" style="display:none" onchange="loadGPXFile(this.files[0])">
-      <div id="gpxStatus" style="font-size:11px;color:var(--muted);margin-bottom:10px;min-height:16px"></div>
+      <div id="gpxStatus" style="font-size:11px;color:var(--muted);margin-bottom:8px;min-height:16px"></div>
+      <label id="gpxFillEleRow" style="display:none;align-items:center;gap:6px;font-size:11px;color:var(--text);margin-bottom:10px;cursor:pointer">
+        <input type="checkbox" id="gpxFillEleChk" checked>
+        ⛰ Höhendaten per BRouter ergänzen (Route wird dafür nachgeroutet, dauert etwas)
+      </label>
       <span class="modal-lbl">Tour-Name</span>
       <input id="gpxPreviewName" class="acf-input" type="text" placeholder="Name der Tour">
     </div>
@@ -593,6 +597,10 @@ header{background:var(--surface);border-bottom:1px solid var(--border);padding:9
         onchange="loadMultiGpxFiles(this.files);this.value=''">
       <div id="multiGpxStatus" style="font-size:11px;color:var(--muted);margin-bottom:8px;min-height:16px"></div>
       <div id="multiStageList" style="display:flex;flex-direction:column;gap:6px;margin-bottom:10px"></div>
+      <label id="multiFillEleRow" style="display:none;align-items:center;gap:6px;font-size:11px;color:var(--text);margin-bottom:10px;cursor:pointer">
+        <input type="checkbox" id="multiFillEleChk" checked>
+        ⛰ Fehlende Höhendaten per BRouter ergänzen (Etappen ohne Höhenprofil werden nachgeroutet)
+      </label>
       <span class="modal-lbl">Tour-Name</span>
       <input id="multiTourName" class="acf-input" type="text" placeholder="Name der Reise">
     </div>
@@ -2817,16 +2825,18 @@ function loadGPXFile(file) {
       _pendingGpxPts  = pts;
       _pendingGpxEles = eles;
       _pendingGpxKm   = ptsKm(pts);
-      const elevInfo  = eles.length ? ' · Höhenprofil ✓' : '';
+      const elevInfo  = eles.length ? ' · Höhenprofil ✓' : ' · kein Höhenprofil';
       document.getElementById('gpxStatus').textContent =
         `✓ ${pts.length.toLocaleString()} Punkte · ${_pendingGpxKm.toFixed(1)} km · ${name}${elevInfo}`;
       document.getElementById('gpxStatus').style.color = 'var(--green)';
       document.getElementById('gpxPreviewName').value = name;
       document.getElementById('gpxStartBtn').disabled = false;
+      document.getElementById('gpxFillEleRow').style.display = eles.length ? 'none' : 'flex';
     } catch(err) {
       document.getElementById('gpxStatus').textContent = '✗ ' + err.message;
       document.getElementById('gpxStatus').style.color = 'var(--red)';
       document.getElementById('gpxStartBtn').disabled = true;
+      document.getElementById('gpxFillEleRow').style.display = 'none';
     }
   };
   reader.readAsText(file);
@@ -2836,8 +2846,9 @@ async function startGPXTour() {
   if (!_pendingGpxPts) return;
   const name = document.getElementById('gpxPreviewName').value.trim() || 'Neue Tour';
   const smartStages = Math.max(1, Math.round(_pendingGpxKm / 100));
+  const fillElevation = !_pendingGpxEles.length && document.getElementById('gpxFillEleChk').checked;
   hideTourModal();
-  await setupNewRoute(_pendingGpxPts, name, smartStages, _pendingGpxEles);
+  await setupNewRoute(_pendingGpxPts, name, smartStages, _pendingGpxEles, { fillElevation });
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -2891,14 +2902,18 @@ function renderMultiStageList() {
   if (!_pendingStageFiles.length) {
     el.innerHTML = '';
     btn.disabled = true;
+    document.getElementById('multiFillEleRow').style.display = 'none';
     return;
   }
   btn.disabled = false;
+  const anyMissingEle = _pendingStageFiles.some(f => !f.eles.length);
+  document.getElementById('multiFillEleRow').style.display = anyMissingEle ? 'flex' : 'none';
   el.innerHTML = _pendingStageFiles.map((f, i) => `
     <div style="display:flex;align-items:center;gap:6px;background:var(--surface2);border-radius:6px;padding:6px 8px">
       <span style="font-family:'DM Mono',monospace;font-size:11px;color:var(--accent);min-width:16px">${i + 1}</span>
       <input value="${f.name.replace(/"/g,'&quot;')}" oninput="renameMultiStage(${i},this.value)"
         style="flex:1;background:transparent;border:none;color:var(--text);font-size:12px;font-family:'DM Sans',sans-serif;min-width:0">
+      ${!f.eles.length ? '<span title="Kein Höhenprofil in dieser Datei" style="font-size:11px">⛰?</span>' : ''}
       <span style="font-size:10px;color:var(--muted);white-space:nowrap">${f.km.toFixed(1)} km</span>
       <button onclick="moveMultiStage(${i},-1)" ${i === 0 ? 'disabled' : ''} title="Nach oben"
         style="background:transparent;border:none;color:var(--muted);cursor:pointer;font-size:12px;padding:2px 4px">▲</button>
@@ -2929,8 +2944,9 @@ async function startMultiStageTour() {
   if (!_pendingStageFiles.length) return;
   const name = document.getElementById('multiTourName').value.trim() || 'Neue Reise';
   const files = _pendingStageFiles;
+  const fillElevation = document.getElementById('multiFillEleChk').checked;
   hideTourModal();
-  await setupMultiStageRoute(files, name);
+  await setupMultiStageRoute(files, name, { fillElevation });
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -2960,6 +2976,83 @@ function rdpIndices(pts, epsilon) {
   const idx = [];
   for (let i = 0; i < n; i++) if (keep[i]) idx.push(i);
   return idx;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// FEHLENDE HÖHENDATEN PER BROUTER ERGÄNZEN
+// GPX ohne <ele>-Werte hat keinerlei Höhenprofil. BRouters Routing-Segmente
+// enthalten aber ein Geländemodell — routet man die aufgezeichneten Punkte als
+// Wegpunkte exakt nach, liefert BRouter die Höhe entlang (fast) desselben Wegs
+// mit. Die Punkte werden dabei leicht auf das Straßennetz eingerastet.
+// ─────────────────────────────────────────────────────────────────────────────
+const ELEV_REROUTE_CHUNK = 80;  // Wegpunkte pro BRouter-Aufruf (URL-Länge, Tempo)
+
+// Kleines Status-Toast unten mittig — wiederverwendet für GPS-Reparatur und
+// Höhendaten-Ergänzung, damit lang laufende BRouter-Nachbearbeitung sichtbar ist.
+function _gpxToast(id) {
+  let toast = document.getElementById(id);
+  if (!toast) {
+    toast = document.createElement('div');
+    toast.id = id;
+    toast.style.cssText = 'position:fixed;bottom:80px;left:50%;transform:translateX(-50%);' +
+      'background:var(--bg1,#1e1e2e);border:1px solid var(--accent,#3d8eff);' +
+      'border-radius:8px;padding:8px 16px;font-size:12px;color:var(--accent,#3d8eff);' +
+      'z-index:9999;box-shadow:0 4px 12px rgba(0,0,0,.4);white-space:nowrap';
+    document.body.appendChild(toast);
+  }
+  return toast;
+}
+
+// Ein einzelner unroutbarer Zwischenpunkt darf einen ganzen Abschnitt nicht
+// scheitern lassen. Bei einem Fehler wird die Wegpunktdichte halbiert (Start/
+// Ende bleiben immer erhalten) und erneut versucht, bis nur noch Start+Ende
+// übrig sind — das ist derselbe robuste 2-Punkte-Fall, den die GPS-Lücken-
+// Reparatur bereits zuverlässig nutzt.
+function _halveWaypoints(wps) {
+  if (wps.length <= 2) return [wps[0], wps[wps.length - 1]];
+  const out = [wps[0]];
+  for (let k = 2; k < wps.length - 1; k += 2) out.push(wps[k]);
+  out.push(wps[wps.length - 1]);
+  return out;
+}
+
+async function _tryRouteChunk(wps) {
+  try {
+    return await brouterRoute(wps);
+  } catch (e) {
+    if (wps.length <= 2) throw e;
+    return await _tryRouteChunk(_halveWaypoints(wps));
+  }
+}
+
+async function rerouteForElevation(pts, statusFn) {
+  if (pts.length < 2) return { pts, eles: [] };
+  const numChunks = Math.max(1, Math.ceil((pts.length - 1) / (ELEV_REROUTE_CHUNK - 1)));
+  let allPts = [], allEles = [];
+  let idx = 0, chunkNo = 0;
+  while (idx < pts.length - 1) {
+    chunkNo++;
+    const end = Math.min(idx + ELEV_REROUTE_CHUNK - 1, pts.length - 1);
+    const chunkWps = pts.slice(idx, end + 1);
+    if (statusFn) statusFn(chunkNo, numChunks);
+    try {
+      const { pts: rPts, eles: rEles } = await _tryRouteChunk(chunkWps);
+      if (allPts.length) {
+        allPts  = allPts.concat(rPts.slice(1));
+        allEles = (allEles.length && rEles.length) ? allEles.concat(rEles.slice(1)) : [];
+      } else {
+        allPts = rPts; allEles = rEles;
+      }
+    } catch {
+      // Abschnitt auch mit nur Start+Ende nicht routbar — Original-Punkte ohne
+      // Höhe übernehmen, Höhenprofil für den gesamten Track verwerfen (kein
+      // Lückenprofil in der Sidebar-Anzeige)
+      allPts  = allPts.concat(chunkWps.slice(allPts.length ? 1 : 0));
+      allEles = [];
+    }
+    idx = end;
+  }
+  return { pts: allPts, eles: allEles };
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -3012,16 +3105,7 @@ async function repairGpsJumps(pts, eles = []) {
 
   if (jumpIdxs.length > 0) {
     // Show a brief toast so the user sees the repair in progress
-    let toast = document.getElementById('_gpxRepairToast');
-    if (!toast) {
-      toast = document.createElement('div');
-      toast.id = '_gpxRepairToast';
-      toast.style.cssText = 'position:fixed;bottom:80px;left:50%;transform:translateX(-50%);' +
-        'background:var(--bg1,#1e1e2e);border:1px solid var(--accent,#3d8eff);' +
-        'border-radius:8px;padding:8px 16px;font-size:12px;color:var(--accent,#3d8eff);' +
-        'z-index:9999;box-shadow:0 4px 12px rgba(0,0,0,.4);white-space:nowrap';
-      document.body.appendChild(toast);
-    }
+    const toast = _gpxToast('_gpxRepairToast');
     toast.textContent = `⏳ Korrigiere ${jumpIdxs.length} GPS-Lücke${jumpIdxs.length > 1 ? 'n' : ''} via BRouter…`;
 
     const repairedPts = [], repairedEles = [];
@@ -3082,7 +3166,14 @@ async function _persistAndDrawNewRoute() {
   drawCustomRoutes(); render(); drawMarkers();
 }
 
-async function setupNewRoute(rawPts, name, numStages, rawEles = []) {
+async function setupNewRoute(rawPts, name, numStages, rawEles = [], opts = {}) {
+  if (opts.fillElevation && !rawEles.length) {
+    const toast = _gpxToast('_gpxEleToast');
+    ({ pts: rawPts, eles: rawEles } = await rerouteForElevation(rawPts, (i, n) =>
+      toast.textContent = `⏳ Ergänze Höhendaten via BRouter… ${i}/${n}`));
+    toast.textContent = rawEles.length ? '✓ Höhendaten ergänzt' : '⚠ Höhendaten konnten nicht ermittelt werden';
+    setTimeout(() => toast.remove(), 3000);
+  }
   let { pts: sampled, eles: sampledEles } = simplifyTrack(rawPts, rawEles);
   ({ pts: sampled, eles: sampledEles } = await repairGpsJumps(sampled, sampledEles));
 
@@ -3108,17 +3199,32 @@ async function setupNewRoute(rawPts, name, numStages, rawEles = []) {
 // gleichmäßig verteilt). Lücken zwischen den Dateien werden per BRouter
 // überbrückt, damit die Gesamtroute durchgehend befahrbar bleibt.
 // ─────────────────────────────────────────────────────────────────────────────
-async function setupMultiStageRoute(stageFiles, tourName) {
+async function setupMultiStageRoute(stageFiles, tourName, opts = {}) {
   if (!stageFiles || !stageFiles.length) return;
 
-  // 1. Jede Datei einzeln vereinfachen + interne GPS-Lücken reparieren —
-  //    dadurch bleiben die Datei-Grenzpunkte exakt erhalten (RDP behält
-  //    Start-/Endpunkt jedes Abschnitts immer).
+  // 1. Fehlende Höhendaten pro Datei ergänzen (nur die Etappen, die welche
+  //    brauchen), dann jede Datei einzeln vereinfachen + interne GPS-Lücken
+  //    reparieren — dadurch bleiben die Datei-Grenzpunkte exakt erhalten
+  //    (RDP behält Start-/Endpunkt jedes Abschnitts immer).
+  const missingEle = stageFiles.filter(f => !f.eles.length).length;
+  let toast = null;
+  if (opts.fillElevation && missingEle) toast = _gpxToast('_gpxEleToast');
+
   const parts = [];
-  for (const f of stageFiles) {
-    let { pts, eles } = simplifyTrack(f.pts, f.eles);
+  for (let fi = 0; fi < stageFiles.length; fi++) {
+    const f = stageFiles[fi];
+    let rawPts = f.pts, rawEles = f.eles;
+    if (opts.fillElevation && !rawEles.length) {
+      ({ pts: rawPts, eles: rawEles } = await rerouteForElevation(rawPts, (i, n) =>
+        toast.textContent = `⏳ Höhendaten Etappe ${fi + 1}/${stageFiles.length} — Abschnitt ${i}/${n}…`));
+    }
+    let { pts, eles } = simplifyTrack(rawPts, rawEles);
     ({ pts, eles } = await repairGpsJumps(pts, eles));
     parts.push({ pts, eles, name: f.name });
+  }
+  if (toast) {
+    toast.textContent = parts.every(p => p.eles.length) ? '✓ Höhendaten ergänzt' : '⚠ Höhendaten konnten nicht für alle Etappen ermittelt werden';
+    setTimeout(() => toast.remove(), 3000);
   }
 
   // 2. Aneinanderhängen; Lücken zwischen Etappenende und nächstem Etappenstart
@@ -3212,10 +3318,12 @@ function showTourModal() {
   document.getElementById('gpxPreviewName').value = '';
   document.getElementById('gpxStartBtn').disabled = true;
   document.getElementById('gpxFileInput').value = '';
+  document.getElementById('gpxFillEleRow').style.display = 'none';
   _pendingStageFiles = [];
   document.getElementById('multiGpxStatus').textContent = '';
   document.getElementById('multiTourName').value = '';
   document.getElementById('multiGpxFileInput').value = '';
+  document.getElementById('multiFillEleRow').style.display = 'none';
   renderMultiStageList();
   switchTourTab(_activeTab);
   document.getElementById('tourModal').classList.add('open');
