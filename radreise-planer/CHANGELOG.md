@@ -1,5 +1,8 @@
 # Changelog — Radreise Planer
 
+## v1.8.8 (2026-07-19)
+- **Fix: „🔁 Neu routen" veränderte die Strecke viel zu stark.** BRouter bekam bisher pro Etappe (bzw. bei „alle Etappen" sogar über die komplette Tour) nur Start- und Endpunkt als Wegpunkte — dazwischen hatte BRouter völlig freie Wahl und konnte einen komplett anderen Weg picken als die ursprünglich aufgezeichnete Route (z. B. eine andere Talseite oder einen großen Umweg). Jetzt werden zusätzlich Zwischenpunkte aus der Originalroute (alle ~8 km) als Wegpunkte mitgegeben, sodass die neu berechnete Strecke nah am ursprünglichen Verlauf bleibt und wirklich nur mit dem aktuellen BRouter-Profil aktualisiert wird, statt großflächig neu erfunden zu werden. Betrifft sowohl den Reroute einzelner Etappen als auch „Alle Etappen".
+
 ## v1.8.7 (2026-07-19)
 - Fix: Versionsnummer im Header (Logo oben links) war hartcodiert und blieb bei den letzten Versionsbumps auf „v1.8.3" stehen, obwohl `config.yaml` schon weiter war. Jetzt synchron mit der tatsächlichen Version.
 

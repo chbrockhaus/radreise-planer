@@ -304,7 +304,7 @@ header{background:var(--surface);border-bottom:1px solid var(--border);padding:9
 </head>
 <body>
 <header>
-  <div class="logo">🚴 Radreise Planer<span class="logo-ver">v1.8.7</span></div>
+  <div class="logo">🚴 Radreise Planer<span class="logo-ver">v1.8.8</span></div>
   <div class="stats">
     <div class="stat"><span class="sl">Route</span><span class="sv" id="hdrRoute" style="color:var(--muted)">–</span></div>
     <div class="stat"><span class="sl">Gesamt</span><span class="sv" id="hdrTotal" style="color:var(--muted)">–</span></div>
@@ -2184,6 +2184,17 @@ function subsamplePts(pts, max = 20) {
   const step = (pts.length - 1) / (max - 1);
   for (let i = 0; i < max; i++) out.push(pts[Math.round(i * step)]);
   return out;
+}
+
+// Wegpunkte für einen Reroute-Abschnitt: Zwischenpunkte aus der Originalroute
+// (statt nur Start+Ende) sampeln, damit BRouter nah am ursprünglichen
+// Streckenverlauf bleibt statt zwischen weit entfernten Punkten (z. B. den
+// ~100 km auseinanderliegenden Etappengrenzen) frei einen völlig anderen Weg zu
+// wählen — genau das führte bei "Neu routen" zu großen, ungewollten Abweichungen.
+function subsampleRangeForReroute(startIdx, endIdx, intervalKm = 8, maxPts = 60) {
+  const lengthKm = routeCumDist[endIdx] - routeCumDist[startIdx];
+  const count = Math.min(maxPts, Math.max(2, Math.round(lengthKm / intervalKm) + 1));
+  return subsamplePts(ROUTE_PTS.slice(startIdx, endIdx + 1), count);
 }
 
 function ptsKm(pts) {
@@ -4133,30 +4144,40 @@ async function applyReroute() {
     let newEles = [];
 
     if (isFullReroute) {
-      // ── Alle Etappen: ein einziger BRouter-Aufruf durch alle Etappenenden ──
+      // ── Alle Etappen: ein einziger BRouter-Aufruf, aber mit Zwischenpunkten
+      // aus der Originalroute je Etappe (statt nur den Etappengrenzen) — sonst
+      // hat BRouter zwischen den oft ~100 km entfernten Grenzen völlig freie
+      // Wahl und weicht stark vom ursprünglichen Streckenverlauf ab.
       btn.textContent = '⏳ Berechne Gesamtroute…';
-      // Durch die tatsächlichen Etappengrenzen + das Ziel routen
-      const waypoints = [ROUTE_PTS[0], ...boundaryPts, ROUTE_PTS[ROUTE_PTS.length - 1]];
+      const waypoints = [ROUTE_PTS[0]];
+      let segStartIdx = 0;
+      for (let i = 0; i < NUM_STAGES; i++) {
+        const segEndIdx = i < NUM_STAGES - 1
+          ? Math.min(routeIdxAtKm(stageMainBoundaryKm(i)), ROUTE_PTS.length - 1)
+          : ROUTE_PTS.length - 1;
+        waypoints.push(...subsampleRangeForReroute(segStartIdx, segEndIdx).slice(1));
+        segStartIdx = segEndIdx;
+      }
       const { pts, eles } = await brouterRoute(waypoints);
       newPts  = pts;
       newEles = eles;
     } else {
       // ── Teilweise: ein BRouter-Aufruf je ausgewählter Etappe ──
       for (let i = 0; i < NUM_STAGES; i++) {
-        const startPt = i === 0 ? ROUTE_PTS[0] : [STAGE_ENDS[i - 1].lat, STAGE_ENDS[i - 1].lon];
-        const endPt   = [STAGE_ENDS[i].lat, STAGE_ENDS[i].lon];
+        const sIdx = i === 0 ? 0 : routeIdxAtKm(stageMainBoundaryKm(i - 1));
+        const eIdx = Math.min(routeIdxAtKm(stageMainBoundaryKm(i)), ROUTE_PTS.length - 1);
 
         let segPts, segEles;
         if (checkedSet.has(i)) {
           btn.textContent = `⏳ Etappe ${i + 1} / ${NUM_STAGES}…`;
-          const { pts, eles } = await brouterRoute([startPt, endPt]);
+          // Zwischenpunkte aus der Originalroute mitgeben (siehe oben) statt nur
+          // Start+Ende — hält den neu berechneten Abschnitt nah am ursprünglichen Verlauf.
+          const { pts, eles } = await brouterRoute(subsampleRangeForReroute(sIdx, eIdx));
           segPts  = pts;
           segEles = eles;
           newSegKm[i] = ptsKm(segPts);   // tatsächliche km für adjustKm
         } else {
           // Originalen ROUTE_PTS-Abschnitt beibehalten
-          const sIdx = i === 0 ? 0 : routeIdxAtKm(stageMainBoundaryKm(i - 1));
-          const eIdx = Math.min(routeIdxAtKm(stageMainBoundaryKm(i)), ROUTE_PTS.length - 1);
           segPts  = ROUTE_PTS.slice(sIdx, eIdx + 1);
           segEles = ROUTE_ELEVATIONS.length ? ROUTE_ELEVATIONS.slice(sIdx, eIdx + 1) : [];
         }
