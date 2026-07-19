@@ -1,5 +1,8 @@
 # Changelog — Radreise Planer
 
+## v1.8.7 (2026-07-19)
+- Fix: Versionsnummer im Header (Logo oben links) war hartcodiert und blieb bei den letzten Versionsbumps auf „v1.8.3" stehen, obwohl `config.yaml` schon weiter war. Jetzt synchron mit der tatsächlichen Version.
+
 ## v1.8.6 (2026-07-19)
 - **Fix: Abzweigpunkt bei Camp-Ziel per echter BRouter-Distanz statt Luftlinie** — behebt eine Überkorrektur aus v1.8.4. Luftlinie ist als Schätzung für die tatsächliche Straßenlänge unzuverlässig: mal zu optimistisch (v1.8.3 und früher — der Abzweig landete NACH einer unnötigen Schleife der Originalroute, die man zurückfahren musste), mal zu pessimistisch für kurze Reststrecken (v1.8.4 — fast die komplette Originalroute wurde verworfen, weil jede Luftlinien-Abkürzung besser aussah als sie in Wirklichkeit war). Jetzt werden mehrere Kandidaten-Abzweigpunkte entlang der Route real bei BRouter angefragt (Route bis zum Kandidat + echte BRouter-Distanz zum Ziel) und der günstigste gewählt. Am Testfall (Etappe Marburg → Amöneburg) wählt der Algorithmus jetzt korrekt den Abzweig bei Cölbe statt sofort am Etappenanfang oder erst kurz vor dem Ziel.
 
