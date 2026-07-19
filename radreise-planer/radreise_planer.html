@@ -1493,8 +1493,15 @@ function render(){
     const km=Math.round(st.km);
     const routeLocked = !!(st.campTarget || st.campFromPrev);
     const minKm=Math.max(10,BASE_KM_INT-20), maxKm=BASE_KM_INT+20;
-    const canDec=!isLast && !routeLocked && (BASE_KM_INT+st.adjustKm-1)>=minKm;
-    const canInc=!isLast && !routeLocked && (BASE_KM_INT+st.adjustKm+1)<=maxKm;
+    // Wenn die anschließende Etappe fest verplant (Camp-Route) oder selbst am
+    // Limit ist, kann sie den Ausgleich nicht mehr aufnehmen — Button dann sperren.
+    const nextIsAdjustable = !isLast && i + 1 < NUM_STAGES - 1;
+    const nextSt = nextIsAdjustable ? stages[i+1] : null;
+    const nextLocked = nextIsAdjustable && !!(nextSt.campTarget || nextSt.campFromPrev);
+    const nextCanShrink = !nextIsAdjustable || (!nextLocked && (BASE_KM_INT+nextSt.adjustKm-1)>=minKm);
+    const nextCanGrow   = !nextIsAdjustable || (!nextLocked && (BASE_KM_INT+nextSt.adjustKm+1)<=maxKm);
+    const canDec=!isLast && !routeLocked && (BASE_KM_INT+st.adjustKm-1)>=minKm && nextCanGrow;
+    const canInc=!isLast && !routeLocked && (BASE_KM_INT+st.adjustKm+1)<=maxKm && nextCanShrink;
     const warn=km<minKm||km>maxKm;
     const div=document.createElement('div');
     div.className='stage-card'+(activeStage===i?' active':'');
@@ -1515,7 +1522,8 @@ function render(){
       if(st.campsites.length===0){
         campHtml+=`<div class="no-camps">⚠ Kein Campingplatz gefunden (alle ±10 km probiert)</div>`;
       } else {
-        const hasAutoTarget = st.campTarget && !st.campTarget._manual;
+        const hasAutoTarget   = st.campTarget && !st.campTarget._manual;
+        const hasManualTarget = st.campTarget && st.campTarget._manual;
         const toggled = expandedCampLists.has(i);
         if (hasAutoTarget) {
           // Default: collapsed (only target). toggled = expanded (all)
@@ -1527,6 +1535,16 @@ function render(){
           } else {
             campHtml += `<div class="campsite-list">${st.campsites.map((c,ci)=>renderCamp(c,i,ci)).join('')}</div>`;
             campHtml += `<span class="camp-toggle" onclick="event.stopPropagation();toggleCampList(${i})">▲ Andere ausblenden</span>`;
+          }
+        } else if (hasManualTarget) {
+          // Ziel ist ein manueller/Karten-Camp, nicht Teil dieser Liste — komplett
+          // hinter dem Toggle verstecken, sonst taucht er hier UNMARKIERT nochmal
+          // neben dem "⛳ Ziel"-Eintrag weiter unten auf (sieht wie ein Duplikat aus).
+          if (!toggled) {
+            campHtml += `<span class="camp-toggle" onclick="event.stopPropagation();toggleCampList(${i})">+ ${st.campsites.length} Campingplätze anzeigen</span>`;
+          } else {
+            campHtml += `<div class="campsite-list">${st.campsites.map((c,ci)=>renderCamp(c,i,ci)).join('')}</div>`;
+            campHtml += `<span class="camp-toggle" onclick="event.stopPropagation();toggleCampList(${i})">▲ Zuklappen</span>`;
           }
         } else {
           // Default: expanded (all). toggled = collapsed (count only)
@@ -1653,11 +1671,22 @@ function adj(i, delta){
   if(i===NUM_STAGES-1) return;
   // Can't adjust while a camp route is active – the km is fixed by the route
   if(stages[i].campTarget || stages[i].campFromPrev) return;
-  pushUndo(`Etappe ${i + 1} Länge ${delta > 0 ? '+' : ''}${delta} km`);
   const minKm=Math.max(10,BASE_KM_INT-20), maxKm=BASE_KM_INT+20;
   const newKm=BASE_KM_INT+stages[i].adjustKm+delta;
   if(newKm<minKm||newKm>maxKm) return;
+  // Nur die unmittelbar ANSCHLIESSENDE Etappe gleicht aus (wird kürzer wenn diese
+  // länger wird), nicht alle folgenden. Die letzte Etappe (Restetappe) braucht
+  // keinen Ausgleich — ihre km ergeben sich automatisch aus restKm().
+  const nextIsAdjustable = i + 1 < NUM_STAGES - 1;
+  if (nextIsAdjustable) {
+    // Nächste Etappe durch eigene Camp-Route fixiert – Länge kann nicht ausgeglichen werden
+    if (stages[i+1].campTarget || stages[i+1].campFromPrev) return;
+    const nextNewKm = BASE_KM_INT + stages[i+1].adjustKm - delta;
+    if (nextNewKm < minKm || nextNewKm > maxKm) return;
+  }
+  pushUndo(`Etappe ${i + 1} Länge ${delta > 0 ? '+' : ''}${delta} km`);
   stages[i].adjustKm+=delta;
+  if (nextIsAdjustable) stages[i+1].adjustKm-=delta;
   drawCustomRoutes(); render(); drawMarkers();
 }
 

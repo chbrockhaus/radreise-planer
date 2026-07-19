@@ -1,5 +1,9 @@
 # Changelog — Radreise Planer
 
+## v1.8.5 (2026-07-19)
+- Fix: Wurde ein Campingplatz direkt auf der Karte (OSM-Overlay „⛳ Route hierher") als Etappenziel gesetzt, blieb die bereits gesuchte Campingplatz-Liste in der Sidebar unverändert vollständig ausgeklappt stehen — statt sich wie beim Setzen eines Ziels aus der Suchliste selbst zu reduzieren. War dieselbe Etappe zuvor schon durchsucht worden, tauchte der Campingplatz dadurch optisch doppelt auf (einmal als normaler Listeneintrag, einmal als „⛳ Ziel"). Die Suchliste klappt jetzt bei JEDEM gesetzten Ziel ein (auch bei Karten-/manuellen Zielen), nicht nur bei Zielen aus der eigenen Suche.
+- Fix: Die +/− Buttons zum Anpassen der Etappenlänge in der Sidebar veränderten bisher nur die angeklickte Etappe selbst — der Ausgleich landete unsichtbar in der letzten Restetappe, egal welche Etappe verändert wurde. Jetzt gleicht nur die unmittelbar ANSCHLIESSENDE Etappe aus (wird kürzer, wenn die aktuelle länger gemacht wird, und umgekehrt) — die Buttons sind zusätzlich gesperrt, wenn die anschließende Etappe durch eine eigene Camp-Route festgelegt ist oder selbst am Längenlimit steht.
+
 ## v1.8.4 (2026-07-19)
 - Fix: Beim Setzen eines neuen Etappenziels (Campingplatz) wurde der Abzweigpunkt bisher rein nach Luftlinien-Nähe zum Ziel gewählt. Lag die Originalroute in einer Schleife (z. B. eine Autobahnauffahrt-Schleife), landete der nächste Punkt oft *hinter* der Schleife — die komplette Schleife musste unnötig mitgefahren werden, obwohl ein viel kürzerer direkter Weg zum neuen Ziel existierte. Der Abzweigpunkt wird jetzt so gewählt, dass die Gesamtstrecke (bereits gefahrene Route + Luftlinie zum Ziel) minimal ist, nicht mehr nur die Luftlinie allein.
 
