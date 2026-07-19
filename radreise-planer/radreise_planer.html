@@ -304,7 +304,7 @@ header{background:var(--surface);border-bottom:1px solid var(--border);padding:9
 </head>
 <body>
 <header>
-  <div class="logo">🚴 Radreise Planer<span class="logo-ver">v1.8.8</span></div>
+  <div class="logo">🚴 Radreise Planer<span class="logo-ver">v1.8.9</span></div>
   <div class="stats">
     <div class="stat"><span class="sl">Route</span><span class="sv" id="hdrRoute" style="color:var(--muted)">–</span></div>
     <div class="stat"><span class="sl">Gesamt</span><span class="sv" id="hdrTotal" style="color:var(--muted)">–</span></div>
@@ -2146,23 +2146,45 @@ function nearestRoutePt(lat, lon, startIdx, endIdx) {
   return best;
 }
 
-// Bester Abzweigpunkt zu einem Ziel (Camp) per ECHTER BRouter-Distanz statt
-// Luftlinie. Luftlinie ist als Schätzung für die tatsächliche Straßenlänge
-// unzuverlässig — mal zu optimistisch (führte dazu, dass der Abzweig erst NACH
-// einer unnötigen Schleife der Originalroute lag, die man dann zurückfahren
-// musste), mal zu pessimistisch für kurze Reststrecken (führte dazu, dass fast
-// die komplette Originalroute verworfen und stattdessen viel zu früh abgebogen
-// wurde). Deshalb werden mehrere Kandidatenpunkte entlang der Route real bei
-// BRouter angefragt und die jeweilige Gesamtstrecke (Route bis zum Kandidat +
-// echte BRouter-Distanz zum Ziel) verglichen — der Kandidat mit der kürzesten
-// Gesamtstrecke gewinnt.
-async function findBestBranch(stStartIdx, stEndIdx, lat, lon, isCancelled) {
-  const airNearIdx = nearestRoutePt(lat, lon, stStartIdx, stEndIdx);
-  const spanKm = routeCumDist[airNearIdx] - routeCumDist[stStartIdx];
-  const numCandidates = Math.min(8, Math.max(2, Math.round(spanKm / 8) + 1));
+// Luftlinien-Ankerpunkt mit Schleifenerkennung: läuft die Route vom Ziel weg
+// und kommt länger als loopLookaheadKm nicht wieder auf loopMarginKm heran,
+// gilt das als "echte Schleife" (z. B. eine Autobahnauffahrt) — dann wird VOR
+// der Schleife abgebrochen (letzter bekannter Bestwert). Ohne eine solche
+// Schleife läuft die Suche bis zur global nächsten Annäherung durch, auch wenn
+// die Originalroute dorthin nicht schnurgerade verläuft — reines "kürzeste
+// Gesamtstrecke"-Vergleichen (frühere Versionen) bevorzugte sonst fast immer
+// einen sofortigen Abzweig, weil JEDE direkte BRouter-Verbindung numerisch
+// kürzer ist als eine kurvige, aber sinnvoll fortschreitende Originalstrecke.
+function nearestRoutePtAvoidingLoop(lat, lon, startIdx, endIdx, loopMarginKm = 1.5, loopLookaheadKm = 5) {
+  let runMin = hav(lat, lon, ROUTE_PTS[startIdx][0], ROUTE_PTS[startIdx][1]);
+  let runMinIdx = startIdx;
+  let loopStartIdx = null;
+  for (let i = startIdx + 1; i <= endIdx; i++) {
+    const d = hav(lat, lon, ROUTE_PTS[i][0], ROUTE_PTS[i][1]);
+    if (d <= runMin + loopMarginKm) {
+      loopStartIdx = null;
+      if (d < runMin) { runMin = d; runMinIdx = i; }
+    } else {
+      if (loopStartIdx === null) loopStartIdx = i;
+      if (routeCumDist[i] - routeCumDist[loopStartIdx] > loopLookaheadKm) return runMinIdx;
+    }
+  }
+  return runMinIdx;
+}
+
+// Bester Abzweigpunkt zu einem Ziel (Camp): zuerst der schleifenbereinigte
+// Luftlinien-Ankerpunkt (s.o.), danach in einem SCHMALEN Fenster (±windowKm)
+// darum ein paar Kandidaten real bei BRouter testen — gleicht lokale
+// Eigenheiten des Straßennetzes aus (z. B. eine Flussquerung knapp daneben),
+// ohne dass ein "kürzerer Weg" von ganz vorne die Auswahl an sich reißen kann.
+async function findBestBranch(stStartIdx, stEndIdx, lat, lon, isCancelled, windowKm = 3) {
+  const anchorIdx = nearestRoutePtAvoidingLoop(lat, lon, stStartIdx, stEndIdx);
+  const winStartIdx = routeIdxAtKm(Math.max(routeCumDist[stStartIdx], routeCumDist[anchorIdx] - windowKm));
+  const winEndIdx   = routeIdxAtKm(Math.min(routeCumDist[stEndIdx],   routeCumDist[anchorIdx] + windowKm));
+  const numCandidates = Math.max(2, Math.min(5, winEndIdx - winStartIdx + 1));
   const candIdxs = new Set();
   for (let k = 0; k < numCandidates; k++) {
-    const km = routeCumDist[stStartIdx] + spanKm * k / (numCandidates - 1);
+    const km = routeCumDist[winStartIdx] + (routeCumDist[winEndIdx] - routeCumDist[winStartIdx]) * k / (numCandidates - 1);
     candIdxs.add(routeIdxAtKm(km));
   }
   let best = null;

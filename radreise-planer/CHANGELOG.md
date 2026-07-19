@@ -1,5 +1,8 @@
 # Changelog — Radreise Planer
 
+## v1.8.9 (2026-07-19)
+- **Fix: Abzweigpunkt bei Camp-Ziel warf noch immer zu viel der Originalroute weg.** v1.8.6 verglich mehrere Kandidaten-Abzweigpunkte nach reiner Gesamtstrecke (Route bis dahin + echte BRouter-Distanz zum Ziel) — dabei gewinnt fast immer ein früher Abzweig, weil JEDE direkte BRouter-Verbindung numerisch kürzer ist als eine kurvige, aber sinnvoll fortschreitende Originalstrecke, auch wenn diese gar keine Schleife fährt (Beispiel: Etappe bei Siegen). Jetzt wird zuerst per Luftlinie geprüft, ob die Route überhaupt eine ECHTE Schleife fährt (sich vom Ziel entfernt und länger als 5 km nicht wieder annähert) — nur dann wird vor der Schleife abgebogen. Ohne Schleife bleibt die komplette Originalroute bis zur nächsten Annäherung erhalten; die echte BRouter-Distanz wird nur noch in einem schmalen ±3-km-Fenster um diesen Punkt zur Feinjustierung genutzt (z. B. bei einer Flussquerung in der Nähe), nicht mehr über die ganze Etappe.
+
 ## v1.8.8 (2026-07-19)
 - **Fix: „🔁 Neu routen" veränderte die Strecke viel zu stark.** BRouter bekam bisher pro Etappe (bzw. bei „alle Etappen" sogar über die komplette Tour) nur Start- und Endpunkt als Wegpunkte — dazwischen hatte BRouter völlig freie Wahl und konnte einen komplett anderen Weg picken als die ursprünglich aufgezeichnete Route (z. B. eine andere Talseite oder einen großen Umweg). Jetzt werden zusätzlich Zwischenpunkte aus der Originalroute (alle ~8 km) als Wegpunkte mitgegeben, sodass die neu berechnete Strecke nah am ursprünglichen Verlauf bleibt und wirklich nur mit dem aktuellen BRouter-Profil aktualisiert wird, statt großflächig neu erfunden zu werden. Betrifft sowohl den Reroute einzelner Etappen als auch „Alle Etappen".
 
