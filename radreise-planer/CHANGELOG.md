@@ -1,5 +1,8 @@
 # Changelog — Radreise Planer
 
+## v1.9.1 (2026-07-19)
+- **Neu: Tour verlängern.** Neuer Header-Button „🧭 Verlängern" — Klick auf die Karte setzt ein neues Ziel, die App routet vom bisherigen Streckenende dorthin und hängt den neuen Abschnitt an die bestehende Tour an. Bestehende Etappen (Länge, Camp-Ziele, Notizen) bleiben dabei komplett unangetastet — es werden nur so viele neue Etappen wie nötig ergänzt, um den neu hinzugekommenen Abschnitt abzudecken, benannt nach dem neuen Ziel.
+
 ## v1.9.0 (2026-07-19)
 - **Fix: Beim Start wurde manchmal eine alte Route geladen statt der aktuellen.** Die App lud beim Öffnen zuerst die aktuell gespeicherte Route korrekt, hat sie danach aber automatisch durch die zuletzt über „💾 Touren" geöffnete/gespeicherte Tour ersetzt (`localStorage`-Auto-Load) — das überschrieb still den Titel, die Kilometerangabe und alles andere im Header mit alten Daten, unabhängig davon was zuletzt tatsächlich aktiv war. Dieses automatische Nachladen wurde komplett entfernt: Beim Start zählt jetzt nur noch die aktuell auf dem Server gespeicherte Route.
 

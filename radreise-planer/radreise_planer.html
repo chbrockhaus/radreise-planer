@@ -218,6 +218,8 @@ header{background:var(--surface);border-bottom:1px solid var(--border);padding:9
 /* ── Plan Overlay ── */
 #planOverlay{display:none;position:absolute;top:12px;left:0;right:0;z-index:1100;justify-content:center;pointer-events:none}
 #planOverlay.open{display:flex}
+#extendOverlay{display:none;position:absolute;top:12px;left:0;right:0;z-index:1100;justify-content:center;pointer-events:none}
+#extendOverlay.open{display:flex}
 .plan-panel{background:rgba(24,28,36,.95);border:1px solid var(--border);border-radius:8px;padding:12px 16px;min-width:340px;max-width:520px;pointer-events:all;display:flex;flex-direction:column;gap:8px}
 .plan-title{font-size:10px;color:var(--accent);font-weight:600;text-transform:uppercase;letter-spacing:.05em}
 #planStatus{font-size:12px;color:var(--text);min-height:18px}
@@ -304,7 +306,7 @@ header{background:var(--surface);border-bottom:1px solid var(--border);padding:9
 </head>
 <body>
 <header>
-  <div class="logo">🚴 Radreise Planer<span class="logo-ver">v1.9.0</span></div>
+  <div class="logo">🚴 Radreise Planer<span class="logo-ver">v1.9.1</span></div>
   <div class="stats">
     <div class="stat"><span class="sl">Route</span><span class="sv" id="hdrRoute" style="color:var(--muted)">–</span></div>
     <div class="stat"><span class="sl">Gesamt</span><span class="sv" id="hdrTotal" style="color:var(--muted)">–</span></div>
@@ -316,6 +318,7 @@ header{background:var(--surface);border-bottom:1px solid var(--border);padding:9
   <div class="hdr-btn-group" style="margin-left:0">
     <button class="hdr-btn" onclick="showTourModal()" title="Neue Tour erstellen oder GPX importieren">+ Neue Tour</button>
     <button class="hdr-btn" onclick="showTourManager()" title="Touren speichern und laden">💾 Touren</button>
+    <button class="hdr-btn" id="extendBtn" onclick="startExtendMode()" title="Tour um ein neues Ziel verlängern">🧭 Verlängern</button>
   </div>
   <div style="display:flex;gap:4px;margin-left:6px">
     <button class="hdr-btn" id="exportBtn" onclick="exportAllGPX()" title="Alle Etappen als separate Tracks exportieren">↓ GPX Etappen</button>
@@ -372,6 +375,18 @@ header{background:var(--surface);border-bottom:1px solid var(--border);padding:9
           <button class="plan-action-btn" id="planUndoBtn" onclick="undoLastPlanWaypoint()" disabled>↩ Zurück</button>
           <button class="plan-action-btn ok" id="planFinishBtn" onclick="finishPlanRoute()" disabled>✓ Fertig</button>
           <button class="plan-action-btn" onclick="stopPlanMode();showTourModal()" title="Abbrechen">✕</button>
+        </div>
+      </div>
+    </div>
+    <!-- Extend-tour overlay -->
+    <div id="extendOverlay">
+      <div class="plan-panel">
+        <div class="plan-title">🧭 Tour verlängern</div>
+        <div id="extendStatus">Klicke auf die Karte, um das neue Ziel zu setzen</div>
+        <div class="plan-actions">
+          <input id="extendNameInp" class="plan-name-inp" type="text" placeholder="Name des neuen Ziels">
+          <button class="plan-action-btn ok" id="extendConfirmBtn" onclick="confirmExtend()" disabled>✓ Verlängern</button>
+          <button class="plan-action-btn" onclick="stopExtendMode()" title="Abbrechen">✕</button>
         </div>
       </div>
     </div>
@@ -3628,6 +3643,136 @@ async function finishPlanRoute() {
   const smartStages = Math.max(1, Math.round(km / 100));
   stopPlanMode();
   await setupNewRoute(pts, name, smartStages, eles);
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// TOUR VERLÄNGERN — bestehende Route um ein neues Ziel erweitern (Klick auf
+// die Karte), OHNE die bestehende Route zu verändern. ROUTE_PTS wird nur
+// angehängt, nie umindiziert — Etappengrenzen, Camp-Ziele und Notizen der
+// bisherigen Etappen bleiben dadurch automatisch gültig.
+// ─────────────────────────────────────────────────────────────────────────────
+let extendMode   = false;
+let extendPoint  = null;   // [lat, lon] des angeklickten neuen Ziels
+let extendMarker = null;
+
+function startExtendMode() {
+  if (!ROUTE_PTS.length) { alert('Keine Route geladen'); return; }
+  extendMode  = true;
+  extendPoint = null;
+  document.getElementById('extendNameInp').value = '';
+  document.getElementById('extendConfirmBtn').disabled = true;
+  document.getElementById('extendStatus').textContent = 'Klicke auf die Karte, um das neue Ziel zu setzen';
+  document.getElementById('extendOverlay').classList.add('open');
+  leafletMap.on('click', extendModeClick);
+}
+
+function stopExtendMode() {
+  if (!extendMode) return;
+  extendMode = false;
+  leafletMap.off('click', extendModeClick);
+  document.getElementById('extendOverlay').classList.remove('open');
+  if (extendMarker) { leafletMap.removeLayer(extendMarker); extendMarker = null; }
+}
+
+function extendModeClick(e) {
+  const { lat, lng: lon } = e.latlng;
+  extendPoint = [lat, lon];
+  if (extendMarker) leafletMap.removeLayer(extendMarker);
+  extendMarker = L.marker([lat, lon], {
+    icon: L.divIcon({
+      className: '',
+      html: `<div style="width:18px;height:18px;background:#ff6b35;border:2.5px solid #fff;border-radius:50%"></div>`,
+      iconSize: [18, 18], iconAnchor: [9, 9]
+    })
+  }).addTo(leafletMap);
+  const end = ROUTE_PTS[ROUTE_PTS.length - 1];
+  const distKm = Math.round(hav(end[0], end[1], lat, lon));
+  document.getElementById('extendStatus').textContent =
+    `Neues Ziel gesetzt (≈${distKm} km Luftlinie vom bisherigen Ende) — Namen eingeben und bestätigen`;
+  document.getElementById('extendConfirmBtn').disabled = false;
+}
+
+async function confirmExtend() {
+  if (!extendPoint) return;
+  const name = document.getElementById('extendNameInp').value.trim() || 'Neues Ziel';
+  const [lat, lon] = extendPoint;
+  stopExtendMode();
+  await extendTour(lat, lon, name);
+}
+
+async function extendTour(destLat, destLon, destName) {
+  if (!ROUTE_PTS.length) return;
+  document.getElementById('extendOverlay').classList.add('open');
+  const statusEl = document.getElementById('extendStatus');
+  statusEl.textContent = '⏳ Route wird berechnet…';
+
+  const fromPt = ROUTE_PTS[ROUTE_PTS.length - 1];
+  let extPts, extEles;
+  try {
+    ({ pts: extPts, eles: extEles } = await routeWithAutoSplit(fromPt, [destLat, destLon],
+      (i, total) => { if (total > 1) statusEl.textContent = `⏳ Teilsegment ${i}/${total} wird berechnet…`; }));
+  } catch (e) {
+    _overpassHintShow(`⚠ Verlängerung fehlgeschlagen: ${e.message}`, 6000);
+    document.getElementById('extendOverlay').classList.remove('open');
+    return;
+  }
+  document.getElementById('extendOverlay').classList.remove('open');
+  if (!extPts || extPts.length < 2) { _overpassHintShow('⚠ Verlängerung: keine Route gefunden', 5000); return; }
+
+  pushUndo(`Tour verlängert nach „${destName}"`);
+
+  // Alte Etappengrenzen-INDIZES sichern, BEVOR die Route erweitert wird — die
+  // Indizes bleiben gültig (nur Anhängen, kein Umindizieren), daher reicht ein
+  // direktes Wiederverwenden statt erneutem Suchen auf der verlängerten Route.
+  const oldNumStages  = NUM_STAGES;
+  const oldStageNames = STAGE_ENDS.map(se => se.name);
+  const oldBoundaryIdx = [];
+  for (let i = 0; i < oldNumStages; i++) {
+    oldBoundaryIdx.push(Math.min(routeIdxAtKm(stageMainBoundaryKm(i)), ROUTE_PTS.length - 1));
+  }
+  const oldEndKm = TOTAL_KM;
+
+  const hasEle = ROUTE_ELEVATIONS.length === ROUTE_PTS.length && extEles.length === extPts.length;
+  ROUTE_PTS        = ROUTE_PTS.concat(extPts.slice(1));
+  ROUTE_ELEVATIONS = hasEle ? ROUTE_ELEVATIONS.concat(extEles.slice(1)) : [];
+  buildCumDist();
+  TOTAL_KM = routeCumDist[routeCumDist.length - 1];
+
+  const addedKm      = TOTAL_KM - oldEndKm;
+  const numNewStages = Math.max(1, Math.round(addedKm / BASE_KM_INT));
+  NUM_STAGES = oldNumStages + numNewStages;
+  for (let i = oldNumStages; i < NUM_STAGES; i++) stages.push(createStage(i));
+
+  // Etappengrenzen neu aufbauen: alte bleiben exakt an ihrer bisherigen
+  // Position (adjustKm daraus abgeleitet), neue gleichmäßig über den
+  // hinzugekommenen Abschnitt verteilt, letzte = das neue Ziel selbst.
+  STAGE_ENDS = [];
+  let prevKm = 0;
+  for (let i = 0; i < NUM_STAGES; i++) {
+    const isLast = i === NUM_STAGES - 1;
+    let idx;
+    if (i < oldNumStages)      idx = oldBoundaryIdx[i];
+    else if (!isLast)          idx = routeIdxAtKm(oldEndKm + (i - oldNumStages + 1) * (addedKm / numNewStages));
+    else                       idx = ROUTE_PTS.length - 1;
+    const [lat, lon] = ROUTE_PTS[idx];
+    const name = i < oldNumStages ? (oldStageNames[i] || `Etappe ${i + 1}`)
+               : isLast ? destName
+               : `Etappe ${i + 1}`;
+    STAGE_ENDS.push({ lat, lon, name });
+    if (!isLast) {
+      stages[i].adjustKm = (routeCumDist[idx] - prevKm) - BASE_KM_INT;
+      prevKm = routeCumDist[idx];
+    }
+  }
+
+  const startName = ROUTE_NAME.split('→')[0]?.trim() || 'Start';
+  ROUTE_NAME = `${startName} → ${destName}`;
+
+  updateHeaderStats();
+  await saveRouteData();
+  buildMainRouteLayer();
+  drawCustomRoutes(); render(); drawMarkers();
+  if (ROUTE_PTS.length) leafletMap.fitBounds(L.polyline(ROUTE_PTS).getBounds(), { padding: [40, 40] });
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
