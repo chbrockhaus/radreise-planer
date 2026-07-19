@@ -304,7 +304,7 @@ header{background:var(--surface);border-bottom:1px solid var(--border);padding:9
 </head>
 <body>
 <header>
-  <div class="logo">🚴 Radreise Planer<span class="logo-ver">v1.6.0</span></div>
+  <div class="logo">🚴 Radreise Planer<span class="logo-ver">v1.7.0</span></div>
   <div class="stats">
     <div class="stat"><span class="sl">Route</span><span class="sv" id="hdrRoute" style="color:var(--muted)">–</span></div>
     <div class="stat"><span class="sl">Gesamt</span><span class="sv" id="hdrTotal" style="color:var(--muted)">–</span></div>
@@ -559,6 +559,7 @@ header{background:var(--surface);border-bottom:1px solid var(--border);padding:9
     <!-- Tabs -->
     <div class="tour-tabs">
       <button id="tabGPX" class="tour-tab active" onclick="switchTourTab('gpx')">📁 GPX hochladen</button>
+      <button id="tabMulti" class="tour-tab" onclick="switchTourTab('multi')">🧩 Etappen importieren</button>
       <button id="tabManual" class="tour-tab" onclick="switchTourTab('manual')">✏ Manuell planen</button>
     </div>
     <!-- GPX Tab Content -->
@@ -577,6 +578,24 @@ header{background:var(--surface);border-bottom:1px solid var(--border);padding:9
       <span class="modal-lbl">Tour-Name</span>
       <input id="gpxPreviewName" class="acf-input" type="text" placeholder="Name der Tour">
     </div>
+    <!-- Multi-Etappen Tab Content -->
+    <div id="tabMultiContent" style="display:none">
+      <div class="gpx-drop" id="multiGpxDrop"
+        onclick="document.getElementById('multiGpxFileInput').click()"
+        ondragover="event.preventDefault();this.classList.add('drag')"
+        ondragleave="this.classList.remove('drag')"
+        ondrop="event.preventDefault();this.classList.remove('drag');loadMultiGpxFiles(event.dataTransfer.files)">
+        <div style="font-size:28px;margin-bottom:6px">🧩</div>
+        <div style="font-size:12px;color:var(--text);margin-bottom:3px">Eine GPX-Datei pro Etappe hier ablegen</div>
+        <div style="font-size:10px;color:var(--muted)">oder klicken — Mehrfachauswahl möglich</div>
+      </div>
+      <input id="multiGpxFileInput" type="file" accept=".gpx" multiple style="display:none"
+        onchange="loadMultiGpxFiles(this.files);this.value=''">
+      <div id="multiGpxStatus" style="font-size:11px;color:var(--muted);margin-bottom:8px;min-height:16px"></div>
+      <div id="multiStageList" style="display:flex;flex-direction:column;gap:6px;margin-bottom:10px"></div>
+      <span class="modal-lbl">Tour-Name</span>
+      <input id="multiTourName" class="acf-input" type="text" placeholder="Name der Reise">
+    </div>
     <!-- Manual Tab Content -->
     <div id="tabManualContent" style="display:none">
       <div class="modal-section" style="font-size:12px;line-height:1.8;color:var(--text)">
@@ -593,6 +612,7 @@ header{background:var(--surface);border-bottom:1px solid var(--border);padding:9
     <div class="modal-actions">
       <button class="modal-btn-cancel" onclick="hideTourModal()">Abbrechen</button>
       <button class="modal-btn-ok" id="gpxStartBtn" onclick="startGPXTour()" disabled>Tour starten →</button>
+      <button class="modal-btn-ok" id="multiStartBtn" onclick="startMultiStageTour()" disabled style="display:none">Reise starten →</button>
       <button class="modal-btn-ok" id="planStartBtn" onclick="startPlanMode()" style="display:none">▶ Planen beginnen</button>
     </div>
   </div>
@@ -2821,6 +2841,99 @@ async function startGPXTour() {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
+// MEHRERE ETAPPEN-GPX IMPORTIEREN (Tab "🧩 Etappen importieren")
+// Jede hochgeladene Datei wird eine eigene Etappe der Reise.
+// ─────────────────────────────────────────────────────────────────────────────
+let _pendingStageFiles = [];  // [{name, pts, eles, km}], in Reisereihenfolge
+
+function _readGpxFile(file) {
+  return new Promise((resolve) => {
+    const reader = new FileReader();
+    reader.onload = e => {
+      try {
+        const { pts, eles, name } = parseGPX(e.target.result);
+        resolve({ ok: true, name: file.name.replace(/\.gpx$/i, '') || name, pts, eles, km: ptsKm(pts) });
+      } catch (err) {
+        resolve({ ok: false, name: file.name, error: err.message });
+      }
+    };
+    reader.onerror = () => resolve({ ok: false, name: file.name, error: 'Datei konnte nicht gelesen werden' });
+    reader.readAsText(file);
+  });
+}
+
+async function loadMultiGpxFiles(fileList) {
+  const files = [...fileList].filter(f => f.name.toLowerCase().endsWith('.gpx'));
+  if (!files.length) return;
+  const statusEl = document.getElementById('multiGpxStatus');
+  statusEl.style.color = 'var(--muted)';
+  statusEl.textContent = `⏳ Lade ${files.length} Datei${files.length > 1 ? 'en' : ''}…`;
+
+  const results = await Promise.all(files.map(_readGpxFile));
+  const errors = results.filter(r => !r.ok);
+  results.filter(r => r.ok).forEach(r => _pendingStageFiles.push(
+    { name: r.name, pts: r.pts, eles: r.eles, km: r.km }));
+
+  if (errors.length) {
+    statusEl.style.color = 'var(--red)';
+    statusEl.textContent = `✗ ${errors.length} Datei${errors.length > 1 ? 'en' : ''} fehlerhaft: ` +
+      errors.map(e => `${e.name} (${e.error})`).join(', ');
+  } else {
+    statusEl.style.color = 'var(--green)';
+    statusEl.textContent = `✓ ${_pendingStageFiles.length} Etappe${_pendingStageFiles.length > 1 ? 'n' : ''} bereit`;
+  }
+  renderMultiStageList();
+}
+
+function renderMultiStageList() {
+  const el = document.getElementById('multiStageList');
+  const btn = document.getElementById('multiStartBtn');
+  if (!_pendingStageFiles.length) {
+    el.innerHTML = '';
+    btn.disabled = true;
+    return;
+  }
+  btn.disabled = false;
+  el.innerHTML = _pendingStageFiles.map((f, i) => `
+    <div style="display:flex;align-items:center;gap:6px;background:var(--surface2);border-radius:6px;padding:6px 8px">
+      <span style="font-family:'DM Mono',monospace;font-size:11px;color:var(--accent);min-width:16px">${i + 1}</span>
+      <input value="${f.name.replace(/"/g,'&quot;')}" oninput="renameMultiStage(${i},this.value)"
+        style="flex:1;background:transparent;border:none;color:var(--text);font-size:12px;font-family:'DM Sans',sans-serif;min-width:0">
+      <span style="font-size:10px;color:var(--muted);white-space:nowrap">${f.km.toFixed(1)} km</span>
+      <button onclick="moveMultiStage(${i},-1)" ${i === 0 ? 'disabled' : ''} title="Nach oben"
+        style="background:transparent;border:none;color:var(--muted);cursor:pointer;font-size:12px;padding:2px 4px">▲</button>
+      <button onclick="moveMultiStage(${i},1)" ${i === _pendingStageFiles.length - 1 ? 'disabled' : ''} title="Nach unten"
+        style="background:transparent;border:none;color:var(--muted);cursor:pointer;font-size:12px;padding:2px 4px">▼</button>
+      <button onclick="removeMultiStage(${i})" title="Entfernen"
+        style="background:transparent;border:none;color:var(--red,#ff4d4d);cursor:pointer;font-size:12px;padding:2px 4px">🗑</button>
+    </div>`).join('');
+}
+
+function moveMultiStage(i, delta) {
+  const j = i + delta;
+  if (j < 0 || j >= _pendingStageFiles.length) return;
+  [_pendingStageFiles[i], _pendingStageFiles[j]] = [_pendingStageFiles[j], _pendingStageFiles[i]];
+  renderMultiStageList();
+}
+
+function removeMultiStage(i) {
+  _pendingStageFiles.splice(i, 1);
+  renderMultiStageList();
+}
+
+function renameMultiStage(i, value) {
+  if (_pendingStageFiles[i]) _pendingStageFiles[i].name = value;
+}
+
+async function startMultiStageTour() {
+  if (!_pendingStageFiles.length) return;
+  const name = document.getElementById('multiTourName').value.trim() || 'Neue Reise';
+  const files = _pendingStageFiles;
+  hideTourModal();
+  await setupMultiStageRoute(files, name);
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 // RAMER-DOUGLAS-PEUCKER SIMPLIFICATION (iterative, no stack-overflow risk)
 // Returns the indices of points to keep from pts[].
 // epsilon is in the same unit as distPtSeg() → km.
@@ -2852,11 +2965,11 @@ function rdpIndices(pts, epsilon) {
 // ─────────────────────────────────────────────────────────────────────────────
 // NEW ROUTE SETUP
 // ─────────────────────────────────────────────────────────────────────────────
-async function setupNewRoute(rawPts, name, numStages, rawEles = []) {
-  // Simplify with Douglas-Peucker so curves and corners are preserved.
-  // epsilon = 3 m keeps all road geometry visible at any zoom level.
-  // MAX = 15 000 — modern Leaflet handles this fine; it's only applied as a
-  // backstop for extremely dense 1 Hz GPS recordings.
+// Simplify with Douglas-Peucker so curves and corners are preserved.
+// epsilon = 3 m keeps all road geometry visible at any zoom level.
+// MAX = 15 000 — modern Leaflet handles this fine; it's only applied as a
+// backstop for extremely dense 1 Hz GPS recordings.
+function simplifyTrack(rawPts, rawEles = []) {
   const MAX = 15000;
   const EPSILON = 0.003; // km ≈ 3 m
   let sampled = rawPts;
@@ -2878,68 +2991,100 @@ async function setupNewRoute(rawPts, name, numStages, rawEles = []) {
       sampled = bsPts; sampledEles = bsEles;
     }
   }
+  return { pts: sampled, eles: sampledEles };
+}
 
-  // ── Step 2: detect & repair GPS "jump" segments via BRouter ──────────────
-  // A jump is a consecutive-point gap that is >> the typical spacing of this
-  // route (caused by GPS signal loss or straight-line route-planner artefacts).
-  {
-    const gaps = [];
-    for (let i = 1; i < sampled.length; i++)
-      gaps.push(hav(sampled[i-1][0], sampled[i-1][1], sampled[i][0], sampled[i][1]));
+// Detect & repair GPS "jump" segments via BRouter. A jump is a consecutive-
+// point gap that is >> the typical spacing of this route (caused by GPS
+// signal loss or straight-line route-planner artefacts).
+async function repairGpsJumps(pts, eles = []) {
+  let sampled = pts, sampledEles = eles;
+  const gaps = [];
+  for (let i = 1; i < sampled.length; i++)
+    gaps.push(hav(sampled[i-1][0], sampled[i-1][1], sampled[i][0], sampled[i][1]));
 
-    const sorted = [...gaps].sort((a, b) => a - b);
-    const p75   = sorted[Math.floor(sorted.length * 0.75)] || 0.1;
-    // Threshold: 10× the 75th-percentile gap, minimum 500 m
-    const threshold = Math.max(p75 * 10, 0.5);
+  const sorted = [...gaps].sort((a, b) => a - b);
+  const p75   = sorted[Math.floor(sorted.length * 0.75)] || 0.1;
+  // Threshold: 10× the 75th-percentile gap, minimum 500 m
+  const threshold = Math.max(p75 * 10, 0.5);
 
-    const jumpIdxs = gaps.reduce((acc, g, i) => (g > threshold ? [...acc, i + 1] : acc), []);
+  const jumpIdxs = gaps.reduce((acc, g, i) => (g > threshold ? [...acc, i + 1] : acc), []);
 
-    if (jumpIdxs.length > 0) {
-      // Show a brief toast so the user sees the repair in progress
-      let toast = document.getElementById('_gpxRepairToast');
-      if (!toast) {
-        toast = document.createElement('div');
-        toast.id = '_gpxRepairToast';
-        toast.style.cssText = 'position:fixed;bottom:80px;left:50%;transform:translateX(-50%);' +
-          'background:var(--bg1,#1e1e2e);border:1px solid var(--accent,#3d8eff);' +
-          'border-radius:8px;padding:8px 16px;font-size:12px;color:var(--accent,#3d8eff);' +
-          'z-index:9999;box-shadow:0 4px 12px rgba(0,0,0,.4);white-space:nowrap';
-        document.body.appendChild(toast);
-      }
-      toast.textContent = `⏳ Korrigiere ${jumpIdxs.length} GPS-Lücke${jumpIdxs.length > 1 ? 'n' : ''} via BRouter…`;
+  if (jumpIdxs.length > 0) {
+    // Show a brief toast so the user sees the repair in progress
+    let toast = document.getElementById('_gpxRepairToast');
+    if (!toast) {
+      toast = document.createElement('div');
+      toast.id = '_gpxRepairToast';
+      toast.style.cssText = 'position:fixed;bottom:80px;left:50%;transform:translateX(-50%);' +
+        'background:var(--bg1,#1e1e2e);border:1px solid var(--accent,#3d8eff);' +
+        'border-radius:8px;padding:8px 16px;font-size:12px;color:var(--accent,#3d8eff);' +
+        'z-index:9999;box-shadow:0 4px 12px rgba(0,0,0,.4);white-space:nowrap';
+      document.body.appendChild(toast);
+    }
+    toast.textContent = `⏳ Korrigiere ${jumpIdxs.length} GPS-Lücke${jumpIdxs.length > 1 ? 'n' : ''} via BRouter…`;
 
-      const repairedPts = [], repairedEles = [];
-      let prev = 0;
-      for (const ji of jumpIdxs) {
-        for (let i = prev; i < ji; i++) {
-          repairedPts.push(sampled[i]);
-          if (sampledEles.length) repairedEles.push(sampledEles[i] ?? 0);
-        }
-        try {
-          const { pts: rPts, eles: rEles } = await brouterRoute([sampled[ji - 1], sampled[ji]]);
-          for (let k = 1; k < rPts.length; k++) {
-            repairedPts.push(rPts[k]);
-            if (sampledEles.length)
-              repairedEles.push(rEles.length > k ? rEles[k] : (sampledEles[ji] ?? 0));
-          }
-        } catch {
-          // BRouter unavailable — keep original point as fallback
-          repairedPts.push(sampled[ji]);
-          if (sampledEles.length) repairedEles.push(sampledEles[ji] ?? 0);
-        }
-        prev = ji + 1;
-      }
-      for (let i = prev; i < sampled.length; i++) {
+    const repairedPts = [], repairedEles = [];
+    let prev = 0;
+    for (const ji of jumpIdxs) {
+      for (let i = prev; i < ji; i++) {
         repairedPts.push(sampled[i]);
         if (sampledEles.length) repairedEles.push(sampledEles[i] ?? 0);
       }
-      sampled     = repairedPts;
-      sampledEles = sampledEles.length ? repairedEles : [];
-
-      toast.textContent = `✓ ${jumpIdxs.length} GPS-Lücke${jumpIdxs.length > 1 ? 'n' : ''} korrigiert`;
-      setTimeout(() => toast.remove(), 3000);
+      try {
+        const { pts: rPts, eles: rEles } = await brouterRoute([sampled[ji - 1], sampled[ji]]);
+        for (let k = 1; k < rPts.length; k++) {
+          repairedPts.push(rPts[k]);
+          if (sampledEles.length)
+            repairedEles.push(rEles.length > k ? rEles[k] : (sampledEles[ji] ?? 0));
+        }
+      } catch {
+        // BRouter unavailable — keep original point as fallback
+        repairedPts.push(sampled[ji]);
+        if (sampledEles.length) repairedEles.push(sampledEles[ji] ?? 0);
+      }
+      prev = ji + 1;
     }
+    for (let i = prev; i < sampled.length; i++) {
+      repairedPts.push(sampled[i]);
+      if (sampledEles.length) repairedEles.push(sampledEles[i] ?? 0);
+    }
+    sampled     = repairedPts;
+    sampledEles = sampledEles.length ? repairedEles : [];
+
+    toast.textContent = `✓ ${jumpIdxs.length} GPS-Lücke${jumpIdxs.length > 1 ? 'n' : ''} korrigiert`;
+    setTimeout(() => toast.remove(), 3000);
   }
+  return { pts: sampled, eles: sampledEles };
+}
+
+// Etappen-/Camp-Zustand für eine komplett neue Route zurücksetzen
+function _resetRouteState() {
+  currentTourId   = null;   // new route = new tour
+  currentTourName = null;
+  manualCamps = {};
+  expandedCampLists.clear();
+  activeStage = null; activeCamp = null; editingWs = null;
+  editMode = false;
+  document.getElementById('editModeBtn')?.classList.remove('active');
+  document.getElementById('legendDrag').style.display = 'none';
+  _exitRouteEditMode();  // Route-Edit-Zustand zurücksetzen
+}
+
+// Neue Route auf dem Server persistieren, alte Targets/Camps löschen, neu zeichnen
+async function _persistAndDrawNewRoute() {
+  updateHeaderStats();
+  await saveRouteData();
+  try { await fetch('/api/targets',     {method:'POST',headers:{'Content-Type':'application/json'},body:'{}'}); } catch {}
+  try { await fetch('/api/manual-camps',{method:'POST',headers:{'Content-Type':'application/json'},body:'{}'}); } catch {}
+  buildMainRouteLayer();
+  if (ROUTE_PTS.length) leafletMap.fitBounds(L.polyline(ROUTE_PTS).getBounds(), {padding:[40,40]});
+  drawCustomRoutes(); render(); drawMarkers();
+}
+
+async function setupNewRoute(rawPts, name, numStages, rawEles = []) {
+  let { pts: sampled, eles: sampledEles } = simplifyTrack(rawPts, rawEles);
+  ({ pts: sampled, eles: sampledEles } = await repairGpsJumps(sampled, sampledEles));
 
   ROUTE_PTS = sampled;
   ROUTE_ELEVATIONS = sampledEles;
@@ -2950,31 +3095,92 @@ async function setupNewRoute(rawPts, name, numStages, rawEles = []) {
   TOTAL_KM = routeCumDist.length ? routeCumDist[routeCumDist.length - 1] : 0;
   BASE_KM_INT = Math.round(TOTAL_KM / NUM_STAGES) || 1;
 
-  // Reset all stage/camp state
-  currentTourId   = null;   // new route = new tour
-  currentTourName = null;
+  _resetRouteState();
   rebuildStages();
-  manualCamps = {};
-  expandedCampLists.clear();
-  activeStage = null; activeCamp = null; editingWs = null;
-  editMode = false;
-  document.getElementById('editModeBtn')?.classList.remove('active');
-  document.getElementById('legendDrag').style.display = 'none';
-  _exitRouteEditMode();  // Route-Edit-Zustand zurücksetzen
-
   computeStageEnds();
-  updateHeaderStats();
 
-  // Persist to server
-  await saveRouteData();
-  // Clear old targets and manual camps
-  try { await fetch('/api/targets',     {method:'POST',headers:{'Content-Type':'application/json'},body:'{}'}); } catch {}
-  try { await fetch('/api/manual-camps',{method:'POST',headers:{'Content-Type':'application/json'},body:'{}'}); } catch {}
+  await _persistAndDrawNewRoute();
+}
 
-  // Redraw everything
-  buildMainRouteLayer();
-  if (ROUTE_PTS.length) leafletMap.fitBounds(L.polyline(ROUTE_PTS).getBounds(), {padding:[40,40]});
-  drawCustomRoutes(); render(); drawMarkers();
+// ─────────────────────────────────────────────────────────────────────────────
+// MEHRERE ETAPPEN-GPX ZU EINER REISE ZUSAMMENSETZEN
+// Jede Datei bleibt eine eigene Etappe (Grenzen = Datei-Grenzen, nicht
+// gleichmäßig verteilt). Lücken zwischen den Dateien werden per BRouter
+// überbrückt, damit die Gesamtroute durchgehend befahrbar bleibt.
+// ─────────────────────────────────────────────────────────────────────────────
+async function setupMultiStageRoute(stageFiles, tourName) {
+  if (!stageFiles || !stageFiles.length) return;
+
+  // 1. Jede Datei einzeln vereinfachen + interne GPS-Lücken reparieren —
+  //    dadurch bleiben die Datei-Grenzpunkte exakt erhalten (RDP behält
+  //    Start-/Endpunkt jedes Abschnitts immer).
+  const parts = [];
+  for (const f of stageFiles) {
+    let { pts, eles } = simplifyTrack(f.pts, f.eles);
+    ({ pts, eles } = await repairGpsJumps(pts, eles));
+    parts.push({ pts, eles, name: f.name });
+  }
+
+  // 2. Aneinanderhängen; Lücken zwischen Etappenende und nächstem Etappenstart
+  //    per BRouter überbrücken (>50 m), sonst direkt verbinden.
+  const hasEle = parts.every(p => p.eles.length === p.pts.length);
+  let allPts = [], allEles = [];
+  const boundaryIdx = [];   // Index des jeweils LETZTEN Punkts jeder Etappe
+
+  for (let i = 0; i < parts.length; i++) {
+    const p = parts[i];
+    if (i === 0) {
+      allPts  = p.pts.slice();
+      allEles = hasEle ? p.eles.slice() : [];
+    } else {
+      const prevEnd = allPts[allPts.length - 1];
+      const gapKm = hav(prevEnd[0], prevEnd[1], p.pts[0][0], p.pts[0][1]);
+      if (gapKm > 0.05) {
+        try {
+          const { pts: bridgePts, eles: bridgeEles } = await brouterRoute([prevEnd, p.pts[0]]);
+          allPts = allPts.concat(bridgePts.slice(1));
+          if (hasEle) allEles = allEles.concat(
+            bridgeEles.length === bridgePts.length
+              ? bridgeEles.slice(1)
+              : bridgePts.slice(1).map(() => allEles[allEles.length - 1] ?? 0)
+          );
+        } catch {
+          // Keine Verbindung berechenbar — Etappen bleiben als Sprung stehen
+        }
+      }
+      allPts = allPts.concat(p.pts.slice(1));
+      if (hasEle) allEles = allEles.concat(p.eles.slice(1));
+    }
+    boundaryIdx.push(allPts.length - 1);
+  }
+
+  ROUTE_PTS        = allPts;
+  ROUTE_ELEVATIONS = hasEle ? allEles : [];
+  ROUTE_NAME       = tourName;
+  NUM_STAGES       = parts.length;
+
+  buildCumDist();
+  TOTAL_KM = routeCumDist.length ? routeCumDist[routeCumDist.length - 1] : 0;
+  BASE_KM_INT = Math.round(TOTAL_KM / NUM_STAGES) || 1;
+
+  _resetRouteState();
+  rebuildStages();
+
+  // 3. Etappengrenzen exakt an den Datei-Grenzen setzen (nicht gleichmäßig
+  //    verteilt) — jede importierte Datei bleibt genau eine Etappe.
+  STAGE_ENDS = [];
+  let prevKm = 0;
+  for (let i = 0; i < NUM_STAGES; i++) {
+    const idx = boundaryIdx[i];
+    const [lat, lon] = ROUTE_PTS[idx];
+    STAGE_ENDS.push({ lat, lon, name: parts[i].name || `Etappe ${i + 1}` });
+    if (i < NUM_STAGES - 1) {
+      stages[i].adjustKm = (routeCumDist[idx] - prevKm) - BASE_KM_INT;
+      prevKm = routeCumDist[idx];
+    }
+  }
+
+  await _persistAndDrawNewRoute();
 }
 
 async function saveRouteData() {
@@ -3006,6 +3212,11 @@ function showTourModal() {
   document.getElementById('gpxPreviewName').value = '';
   document.getElementById('gpxStartBtn').disabled = true;
   document.getElementById('gpxFileInput').value = '';
+  _pendingStageFiles = [];
+  document.getElementById('multiGpxStatus').textContent = '';
+  document.getElementById('multiTourName').value = '';
+  document.getElementById('multiGpxFileInput').value = '';
+  renderMultiStageList();
   switchTourTab(_activeTab);
   document.getElementById('tourModal').classList.add('open');
 }
@@ -3017,11 +3228,14 @@ function hideTourModal() {
 function switchTourTab(tab) {
   _activeTab = tab;
   document.getElementById('tabGPXContent').style.display    = tab === 'gpx'    ? '' : 'none';
+  document.getElementById('tabMultiContent').style.display  = tab === 'multi'  ? '' : 'none';
   document.getElementById('tabManualContent').style.display = tab === 'manual' ? '' : 'none';
   document.getElementById('tabGPX').classList.toggle('active',    tab === 'gpx');
+  document.getElementById('tabMulti').classList.toggle('active',  tab === 'multi');
   document.getElementById('tabManual').classList.toggle('active', tab === 'manual');
-  document.getElementById('gpxStartBtn').style.display  = tab === 'gpx'    ? '' : 'none';
-  document.getElementById('planStartBtn').style.display = tab === 'manual' ? '' : 'none';
+  document.getElementById('gpxStartBtn').style.display   = tab === 'gpx'    ? '' : 'none';
+  document.getElementById('multiStartBtn').style.display = tab === 'multi'  ? '' : 'none';
+  document.getElementById('planStartBtn').style.display  = tab === 'manual' ? '' : 'none';
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

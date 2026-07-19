@@ -1,5 +1,9 @@
 # Changelog — Radreise Planer
 
+## v1.7.0 (2026-07-18)
+- **Neu: Mehrere einzelne Etappen-GPX zu einer Reise importieren.** Neuer Tab „🧩 Etappen importieren" im Tour-Dialog: pro Etappe eine eigene GPX-Datei hochladen (Mehrfachauswahl), Reihenfolge per ▲▼ anpassen, Etappen umbenennen oder entfernen. Jede Datei wird exakt eine Etappe — die Etappengrenzen liegen an den Datei-Grenzen, nicht gleichmäßig verteilt. Schließen zwei Dateien nicht nahtlos an (Lücke > 50 m), wird die Verbindung automatisch per BRouter berechnet.
+- Intern: Vereinfachung (Douglas-Peucker) und GPS-Lücken-Reparatur aus dem bestehenden Single-GPX-Import wurden als wiederverwendbare Bausteine extrahiert, ohne das bisherige Verhalten zu verändern.
+
 ## v1.6.0 (2026-07-18)
 - **Neu: Rückgängig-Button** („↶ Rückgängig", oben im Header). Macht die letzten Aktionen schrittweise rückgängig — bis zu 20 Schritte. Der Tooltip zeigt jeweils, was rückgängig gemacht wird.
 - Erfasst werden: Campingplatz als Etappenziel setzen/entfernen, Etappengrenze verschieben, Etappenanzahl ändern, Etappenlänge anpassen, Route neu berechnen, manuellen Campingplatz anlegen/löschen sowie das Routen zu einem Camp-POI von der Karte.
