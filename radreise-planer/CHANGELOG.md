@@ -1,5 +1,8 @@
 # Changelog — Radreise Planer
 
+## v1.8.4 (2026-07-19)
+- Fix: Beim Setzen eines neuen Etappenziels (Campingplatz) wurde der Abzweigpunkt bisher rein nach Luftlinien-Nähe zum Ziel gewählt. Lag die Originalroute in einer Schleife (z. B. eine Autobahnauffahrt-Schleife), landete der nächste Punkt oft *hinter* der Schleife — die komplette Schleife musste unnötig mitgefahren werden, obwohl ein viel kürzerer direkter Weg zum neuen Ziel existierte. Der Abzweigpunkt wird jetzt so gewählt, dass die Gesamtstrecke (bereits gefahrene Route + Luftlinie zum Ziel) minimal ist, nicht mehr nur die Luftlinie allein.
+
 ## v1.8.3 (2026-07-18)
 - Fix: Popup „Als Etappenziel setzen" an gefundenen Campingplätzen (orangene/grüne Punkte) ließ sich nicht öffnen. Ursache: Der Klick löste zusätzlich `selectCamp()` aus, das alle Kartenmarker zerstört und neu aufbaut (inkl. Kartenschwenk zum Camp) — dabei wurde der gerade angeklickte Marker samt Popup sofort wieder entfernt, noch bevor er sichtbar war. Wirkte wie „das Fenster bewegt sich immer mit der Maus weg". Popup wird jetzt gezielt auf dem neu aufgebauten Marker geöffnet. Betraf auch manuell angelegte Campingplätze (dort jetzt ebenfalls ein expliziter Klick-Handler statt implizitem Leaflet-Verhalten).
 

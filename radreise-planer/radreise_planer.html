@@ -1363,9 +1363,11 @@ async function setManualAsTarget(si, midx, ev) {
   try {
     const stStartIdx = si > 0 ? routeIdxAtKm(stageMainBoundaryKm(si - 1)) : 0;
     const stEndIdx   = si < NUM_STAGES - 1 ? routeIdxAtKm(stageMainBoundaryKm(si)) : ROUTE_PTS.length - 1;
-    // Seam the branch a touch before the closest approach so BRouter takes the
-    // natural turn-off instead of overshooting the nearest point and doubling back.
-    const nearIdx    = nearestRoutePt(c.lat, c.lon, stStartIdx, stEndIdx);
+    // Branch point that minimizes Route bis dahin + Luftlinie zum Ziel (statt nur
+    // Luftlinie) — verhindert unnötig mitgefahrene Schleifen der Originalroute.
+    // Naht einen Touch vorher, damit BRouter die natürliche Abzweigung nimmt statt
+    // zum nächsten Punkt zu überschießen.
+    const nearIdx    = nearestRoutePtByCost(c.lat, c.lon, stStartIdx, stEndIdx);
     const branchIdx  = Math.max(stStartIdx, routeIdxAtKm(routeCumDist[nearIdx] - 0.6));
     const branchPt   = ROUTE_PTS[branchIdx];
     const wpTocamp   = [branchPt, [c.lat, c.lon]];
@@ -2116,6 +2118,20 @@ function nearestRoutePt(lat, lon, startIdx, endIdx) {
   return best;
 }
 
+// Wie nearestRoutePt, aber minimiert (bereits gefahrene Routenstrecke ab startIdx)
+// + (Luftlinie zum Ziel) statt nur der Luftlinie. Verhindert, dass als Abzweigpunkt
+// eine Stelle gewählt wird, die zwar näher am Ziel liegt, aber erst nach einer
+// unnötigen Schleife der Originalroute erreicht wird (Rückfahrt-Bug).
+function nearestRoutePtByCost(lat, lon, startIdx, endIdx) {
+  let best = startIdx, bestCost = Infinity;
+  const baseKm = routeCumDist[startIdx];
+  for (let i = startIdx; i <= endIdx; i++) {
+    const cost = (routeCumDist[i] - baseKm) + hav(lat, lon, ROUTE_PTS[i][0], ROUTE_PTS[i][1]);
+    if (cost < bestCost) { bestCost = cost; best = i; }
+  }
+  return best;
+}
+
 function subsamplePts(pts, max = 20) {
   if (pts.length <= max) return pts;
   const out = [];
@@ -2308,10 +2324,12 @@ async function setAsTarget(si, ci) {
     const stStartIdx = si > 0 ? routeIdxAtKm(stageMainBoundaryKm(si - 1)) : 0;
     const stEndIdx   = si < NUM_STAGES - 1 ? routeIdxAtKm(stageMainBoundaryKm(si)) : ROUTE_PTS.length - 1;
 
-    // Closest approach of the route to the camp, then seam the branch a touch
-    // BEFORE it so BRouter takes the natural turn-off toward the camp instead of
-    // overshooting to the nearest point and doubling back to it.
-    const nearIdx   = nearestRoutePt(c.lat, c.lon, stStartIdx, stEndIdx);
+    // Branch point that minimizes total distance (Route bis dahin + Luftlinie zum
+    // Ziel) statt nur die Luftlinie — verhindert, dass eine Schleife der
+    // Originalroute unnötig mitgefahren wird, nur weil ihr Ende zufällig näher am
+    // Ziel liegt. Danach die Naht einen Touch VORHER setzen, damit BRouter die
+    // natürliche Abzweigung nimmt statt zum nächsten Punkt zu überschießen.
+    const nearIdx   = nearestRoutePtByCost(c.lat, c.lon, stStartIdx, stEndIdx);
     const branchIdx = Math.max(stStartIdx, routeIdxAtKm(routeCumDist[nearIdx] - 0.6));
     const branchPt  = ROUTE_PTS[branchIdx];
 
