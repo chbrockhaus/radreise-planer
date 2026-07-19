@@ -1,5 +1,8 @@
 # Changelog — Radreise Planer
 
+## v1.8.1 (2026-07-18)
+- Fix: Bei einer Etappe, die *sowohl* einen Rückweg vom Camp der Vorgänger-Etappe (`campFromPrev`) *als auch* ein eigenes Camp-Ziel (`campTarget`) hatte, zeigte die Sidebar nur den km-Anteil des eigenen Camp-Ziels — der Rückweg-Anteil fehlte in der Anzeige (bis zu mehrere km Abweichung von der tatsächlichen Strecke, die auch exportiert wird). Die Etappenlänge wird jetzt in allen Camp-Fällen direkt aus der tatsächlichen Streckengeometrie berechnet, nicht mehr aus zwei separaten, potenziell auseinanderlaufenden Teilwerten.
+
 ## v1.8.0 (2026-07-18)
 - **Neu: Fehlende Höhendaten automatisch per BRouter ergänzen.** Fehlt einer importierten GPX-Datei das Höhenprofil, erscheint eine Checkbox „⛰ Höhendaten per BRouter ergänzen" (vorausgewählt) — die Route wird dabei entlang der aufgezeichneten Punkte nachgeroutet, BRouters Geländemodell liefert die Höhe mit. Funktioniert im Single-GPX-Import **und** im Mehrfach-Etappen-Import (dort nur für die Dateien, denen tatsächlich Höhendaten fehlen — vorhandene Profile bleiben unangetastet). Ein einzelner unroutbarer Zwischenpunkt lässt dabei nicht den ganzen Abschnitt scheitern: bei einem Fehler wird die Wegpunktdichte automatisch halbiert und erneut versucht.
 
