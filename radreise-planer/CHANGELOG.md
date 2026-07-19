@@ -1,5 +1,8 @@
 # Changelog — Radreise Planer
 
+## v1.9.0 (2026-07-19)
+- **Fix: Beim Start wurde manchmal eine alte Route geladen statt der aktuellen.** Die App lud beim Öffnen zuerst die aktuell gespeicherte Route korrekt, hat sie danach aber automatisch durch die zuletzt über „💾 Touren" geöffnete/gespeicherte Tour ersetzt (`localStorage`-Auto-Load) — das überschrieb still den Titel, die Kilometerangabe und alles andere im Header mit alten Daten, unabhängig davon was zuletzt tatsächlich aktiv war. Dieses automatische Nachladen wurde komplett entfernt: Beim Start zählt jetzt nur noch die aktuell auf dem Server gespeicherte Route.
+
 ## v1.8.9 (2026-07-19)
 - **Fix: Abzweigpunkt bei Camp-Ziel warf noch immer zu viel der Originalroute weg.** v1.8.6 verglich mehrere Kandidaten-Abzweigpunkte nach reiner Gesamtstrecke (Route bis dahin + echte BRouter-Distanz zum Ziel) — dabei gewinnt fast immer ein früher Abzweig, weil JEDE direkte BRouter-Verbindung numerisch kürzer ist als eine kurvige, aber sinnvoll fortschreitende Originalstrecke, auch wenn diese gar keine Schleife fährt (Beispiel: Etappe bei Siegen). Jetzt wird zuerst per Luftlinie geprüft, ob die Route überhaupt eine ECHTE Schleife fährt (sich vom Ziel entfernt und länger als 5 km nicht wieder annähert) — nur dann wird vor der Schleife abgebogen. Ohne Schleife bleibt die komplette Originalroute bis zur nächsten Annäherung erhalten; die echte BRouter-Distanz wird nur noch in einem schmalen ±3-km-Fenster um diesen Punkt zur Feinjustierung genutzt (z. B. bei einer Flussquerung in der Nähe), nicht mehr über die ganze Etappe.
 

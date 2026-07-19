@@ -304,7 +304,7 @@ header{background:var(--surface);border-bottom:1px solid var(--border);padding:9
 </head>
 <body>
 <header>
-  <div class="logo">🚴 Radreise Planer<span class="logo-ver">v1.8.9</span></div>
+  <div class="logo">🚴 Radreise Planer<span class="logo-ver">v1.9.0</span></div>
   <div class="stats">
     <div class="stat"><span class="sl">Route</span><span class="sv" id="hdrRoute" style="color:var(--muted)">–</span></div>
     <div class="stat"><span class="sl">Gesamt</span><span class="sv" id="hdrTotal" style="color:var(--muted)">–</span></div>
@@ -3791,7 +3791,6 @@ async function saveTourNow() {
     const res = await r.json();
     currentTourId   = res.id;
     currentTourName = name;
-    localStorage.setItem('lastTourId', res.id);
     statusEl.style.color = 'var(--green)'; statusEl.textContent = '✓ Gespeichert';
     await listTours();
   } catch(e) {
@@ -3807,7 +3806,6 @@ async function loadTour(id) {
     const data = await r.json();
     currentTourId   = id;
     currentTourName = data.name || null;
-    localStorage.setItem('lastTourId', id);
     hideTourManager();
     await restoreTourState(data);
   } catch(e) {
@@ -5002,29 +5000,6 @@ Promise.all([wsInit(), loadRoute(), loadManualCamps()]).then(async () => {
   await loadTargets();
   drawCustomRoutes(); render();
   checkSegmentRefresh();
-
-  // Letzte Tour automatisch wiederherstellen
-  const lastId = localStorage.getItem('lastTourId');
-  if (lastId) {
-    try {
-      const r = await fetch(`/api/tours/${lastId}`);
-      if (r.ok) {
-        const data = await r.json();
-        // Plausibilitätsprüfung: Route muss echte Punkte haben (nicht nur Start+Ende)
-        const pts = data.route_sampled || [];
-        if (pts.length < 10) {
-          console.warn(`Auto-Load: Tour "${data.name}" hat nur ${pts.length} Routenpunkte — übersprungen`);
-          localStorage.removeItem('lastTourId');
-        } else {
-          currentTourId   = lastId;
-          currentTourName = data.name || null;
-          await restoreTourState(data);
-        }
-      } else {
-        localStorage.removeItem('lastTourId'); // Tour existiert nicht mehr
-      }
-    } catch { /* Fehler ignorieren, normaler Start */ }
-  }
 });
 </script>
 </body>
