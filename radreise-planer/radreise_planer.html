@@ -304,7 +304,7 @@ header{background:var(--surface);border-bottom:1px solid var(--border);padding:9
 </head>
 <body>
 <header>
-  <div class="logo">🚴 Radreise Planer<span class="logo-ver">v1.8.2</span></div>
+  <div class="logo">🚴 Radreise Planer<span class="logo-ver">v1.8.3</span></div>
   <div class="stats">
     <div class="stat"><span class="sl">Route</span><span class="sv" id="hdrRoute" style="color:var(--muted)">–</span></div>
     <div class="stat"><span class="sl">Gesamt</span><span class="sv" id="hdrTotal" style="color:var(--muted)">–</span></div>
@@ -1192,7 +1192,15 @@ function drawMarkers() {
       }).bindTooltip(tip, { sticky: true, direction: 'top' })
         .bindPopup(campDotPopup(si, c, isTarget, `setAsTarget(${si},${ci})`),
                    { maxWidth: 260, className: 'co-popup' });
-      dot.on('click', e => { L.DomEvent.stopPropagation(e); selectCamp(si, ci); });
+      dot._campRef = { si, ci };
+      dot.on('click', e => {
+        L.DomEvent.stopPropagation(e);
+        selectCamp(si, ci);
+        // selectCamp() ruft drawMarkers() auf, das ALLE Marker zerstört und neu
+        // erstellt — der angeklickte Marker (und ein evtl. schon geöffnetes
+        // Popup) existiert danach nicht mehr. Popup am NEUEN Marker öffnen.
+        campsiteMarkers.find(m => m._campRef?.si === si && m._campRef?.ci === ci)?.openPopup();
+      });
       dot.addTo(leafletMap);
       campsiteMarkers.push(dot);
     });
@@ -1215,6 +1223,7 @@ function drawMarkers() {
       }).bindTooltip(tip, { sticky: true, direction: 'top' })
         .bindPopup(campDotPopup(si, c, isTarget, `setManualAsTarget(${si},${midx})`),
                    { maxWidth: 260, className: 'co-popup' });
+      dot.on('click', e => { L.DomEvent.stopPropagation(e); dot.openPopup(); });
       dot.addTo(leafletMap);
       campsiteMarkers.push(dot);
     });

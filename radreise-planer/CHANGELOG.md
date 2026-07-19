@@ -1,5 +1,8 @@
 # Changelog — Radreise Planer
 
+## v1.8.3 (2026-07-18)
+- Fix: Popup „Als Etappenziel setzen" an gefundenen Campingplätzen (orangene/grüne Punkte) ließ sich nicht öffnen. Ursache: Der Klick löste zusätzlich `selectCamp()` aus, das alle Kartenmarker zerstört und neu aufbaut (inkl. Kartenschwenk zum Camp) — dabei wurde der gerade angeklickte Marker samt Popup sofort wieder entfernt, noch bevor er sichtbar war. Wirkte wie „das Fenster bewegt sich immer mit der Maus weg". Popup wird jetzt gezielt auf dem neu aufgebauten Marker geöffnet. Betraf auch manuell angelegte Campingplätze (dort jetzt ebenfalls ein expliziter Klick-Handler statt implizitem Leaflet-Verhalten).
+
 ## v1.8.2 (2026-07-18)
 - **Fix: Viel zu hohe Höhenmeter-Anzeige (bis zu 30% und mehr zu viel).** Die Etappen-Höhenmeter wurden bisher durch reine Punkt-zu-Punkt-Summierung des Höhenprofils berechnet — jedes kleine Rauschen im GPS-/DEM-Höhenprofil zählte voll mit, was gegenüber gefilterten Referenzwerten (z. B. BRouter-Web) massiv zu hoch lag (in Tests bis zu +250%). Umgestellt auf ein Hysterese-Verfahren (Standardansatz für dieses Problem, z. B. bei Garmin/Strava): nur Höhenänderungen über 6 m zählen, gemessen ab dem letzten Wendepunkt. An echten BRouter-„filtered ascend"-Werten kalibriert und verifiziert (Ø ~10% Abweichung über mehrere Streckenabschnitte, vorher >100%). Betrifft sowohl die Etappen-Anzeige in der Sidebar als auch den Hover-Tooltip im Höhenprofil-Chart (beide nutzten bisher unterschiedliche, inkonsistente Berechnungen — jetzt vereinheitlicht).
 
