@@ -1363,17 +1363,16 @@ async function setManualAsTarget(si, midx, ev) {
   try {
     const stStartIdx = si > 0 ? routeIdxAtKm(stageMainBoundaryKm(si - 1)) : 0;
     const stEndIdx   = si < NUM_STAGES - 1 ? routeIdxAtKm(stageMainBoundaryKm(si)) : ROUTE_PTS.length - 1;
-    // Branch point that minimizes Route bis dahin + Luftlinie zum Ziel (statt nur
-    // Luftlinie) — verhindert unnötig mitgefahrene Schleifen der Originalroute.
-    // Naht einen Touch vorher, damit BRouter die natürliche Abzweigung nimmt statt
-    // zum nächsten Punkt zu überschießen.
-    const nearIdx    = nearestRoutePtByCost(c.lat, c.lon, stStartIdx, stEndIdx);
-    const branchIdx  = Math.max(stStartIdx, routeIdxAtKm(routeCumDist[nearIdx] - 0.6));
-    const branchPt   = ROUTE_PTS[branchIdx];
-    const wpTocamp   = [branchPt, [c.lat, c.lon]];
-    const { pts: detourPts, eles: detourEles }  = await brouterRoute(wpTocamp);
+    // Mehrere Kandidaten-Abzweigpunkte per echter BRouter-Distanz vergleichen
+    // (Luftlinie ist kein verlässlicher Ersatz — siehe findBestBranch).
+    const best = await findBestBranch(stStartIdx, stEndIdx, c.lat, c.lon, () => stages[si].routingGen !== gen);
 
     if (stages[si].routingGen !== gen) { stages[si].routeLoading = false; return; } // cancelled while routing
+
+    const branchIdx  = best.idx;
+    const branchPt   = ROUTE_PTS[branchIdx];
+    const wpTocamp   = [branchPt, [c.lat, c.lon]];
+    const { pts: detourPts, eles: detourEles } = best;
 
     const stagePts   = [...ROUTE_PTS.slice(stStartIdx, branchIdx + 1), ...detourPts.slice(1)];
     const stageEles_ = detourEles.length === detourPts.length
@@ -2147,17 +2146,35 @@ function nearestRoutePt(lat, lon, startIdx, endIdx) {
   return best;
 }
 
-// Wie nearestRoutePt, aber minimiert (bereits gefahrene Routenstrecke ab startIdx)
-// + (Luftlinie zum Ziel) statt nur der Luftlinie. Verhindert, dass als Abzweigpunkt
-// eine Stelle gewählt wird, die zwar näher am Ziel liegt, aber erst nach einer
-// unnötigen Schleife der Originalroute erreicht wird (Rückfahrt-Bug).
-function nearestRoutePtByCost(lat, lon, startIdx, endIdx) {
-  let best = startIdx, bestCost = Infinity;
-  const baseKm = routeCumDist[startIdx];
-  for (let i = startIdx; i <= endIdx; i++) {
-    const cost = (routeCumDist[i] - baseKm) + hav(lat, lon, ROUTE_PTS[i][0], ROUTE_PTS[i][1]);
-    if (cost < bestCost) { bestCost = cost; best = i; }
+// Bester Abzweigpunkt zu einem Ziel (Camp) per ECHTER BRouter-Distanz statt
+// Luftlinie. Luftlinie ist als Schätzung für die tatsächliche Straßenlänge
+// unzuverlässig — mal zu optimistisch (führte dazu, dass der Abzweig erst NACH
+// einer unnötigen Schleife der Originalroute lag, die man dann zurückfahren
+// musste), mal zu pessimistisch für kurze Reststrecken (führte dazu, dass fast
+// die komplette Originalroute verworfen und stattdessen viel zu früh abgebogen
+// wurde). Deshalb werden mehrere Kandidatenpunkte entlang der Route real bei
+// BRouter angefragt und die jeweilige Gesamtstrecke (Route bis zum Kandidat +
+// echte BRouter-Distanz zum Ziel) verglichen — der Kandidat mit der kürzesten
+// Gesamtstrecke gewinnt.
+async function findBestBranch(stStartIdx, stEndIdx, lat, lon, isCancelled) {
+  const airNearIdx = nearestRoutePt(lat, lon, stStartIdx, stEndIdx);
+  const spanKm = routeCumDist[airNearIdx] - routeCumDist[stStartIdx];
+  const numCandidates = Math.min(8, Math.max(2, Math.round(spanKm / 8) + 1));
+  const candIdxs = new Set();
+  for (let k = 0; k < numCandidates; k++) {
+    const km = routeCumDist[stStartIdx] + spanKm * k / (numCandidates - 1);
+    candIdxs.add(routeIdxAtKm(km));
   }
+  let best = null;
+  for (const idx of candIdxs) {
+    if (isCancelled && isCancelled()) return null;
+    try {
+      const { pts, eles } = await brouterRoute([ROUTE_PTS[idx], [lat, lon]]);
+      const total = (routeCumDist[idx] - routeCumDist[stStartIdx]) + ptsKm(pts);
+      if (!best || total < best.total) best = { idx, pts, eles, total };
+    } catch (e) { /* Kandidat unerreichbar — überspringen, andere probieren */ }
+  }
+  if (!best) throw new Error('Keine Route zu einem Abzweigpunkt gefunden');
   return best;
 }
 
@@ -2353,20 +2370,16 @@ async function setAsTarget(si, ci) {
     const stStartIdx = si > 0 ? routeIdxAtKm(stageMainBoundaryKm(si - 1)) : 0;
     const stEndIdx   = si < NUM_STAGES - 1 ? routeIdxAtKm(stageMainBoundaryKm(si)) : ROUTE_PTS.length - 1;
 
-    // Branch point that minimizes total distance (Route bis dahin + Luftlinie zum
-    // Ziel) statt nur die Luftlinie — verhindert, dass eine Schleife der
-    // Originalroute unnötig mitgefahren wird, nur weil ihr Ende zufällig näher am
-    // Ziel liegt. Danach die Naht einen Touch VORHER setzen, damit BRouter die
-    // natürliche Abzweigung nimmt statt zum nächsten Punkt zu überschießen.
-    const nearIdx   = nearestRoutePtByCost(c.lat, c.lon, stStartIdx, stEndIdx);
-    const branchIdx = Math.max(stStartIdx, routeIdxAtKm(routeCumDist[nearIdx] - 0.6));
-    const branchPt  = ROUTE_PTS[branchIdx];
-
-    // Shortest path: branch point → campsite  (2 waypoints only)
-    const wpTocamp = [branchPt, [c.lat, c.lon]];
-    const { pts: detourPts, eles: detourEles } = await brouterRoute(wpTocamp);
+    // Mehrere Kandidaten-Abzweigpunkte per echter BRouter-Distanz vergleichen
+    // (Luftlinie ist kein verlässlicher Ersatz — siehe findBestBranch).
+    const best = await findBestBranch(stStartIdx, stEndIdx, c.lat, c.lon, () => stages[si].routingGen !== gen);
 
     if (stages[si].routingGen !== gen) { stages[si].routeLoading = false; return; } // cancelled while routing
+
+    const branchIdx = best.idx;
+    const branchPt  = ROUTE_PTS[branchIdx];
+    const wpTocamp  = [branchPt, [c.lat, c.lon]];
+    const { pts: detourPts, eles: detourEles } = best;
 
     // Stage i: original route up to branch point + detour to camp
     const stageIPts  = [...ROUTE_PTS.slice(stStartIdx, branchIdx + 1), ...detourPts.slice(1)];
