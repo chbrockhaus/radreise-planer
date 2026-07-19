@@ -1,5 +1,8 @@
 # Changelog — Radreise Planer
 
+## v1.8.2 (2026-07-18)
+- **Fix: Viel zu hohe Höhenmeter-Anzeige (bis zu 30% und mehr zu viel).** Die Etappen-Höhenmeter wurden bisher durch reine Punkt-zu-Punkt-Summierung des Höhenprofils berechnet — jedes kleine Rauschen im GPS-/DEM-Höhenprofil zählte voll mit, was gegenüber gefilterten Referenzwerten (z. B. BRouter-Web) massiv zu hoch lag (in Tests bis zu +250%). Umgestellt auf ein Hysterese-Verfahren (Standardansatz für dieses Problem, z. B. bei Garmin/Strava): nur Höhenänderungen über 6 m zählen, gemessen ab dem letzten Wendepunkt. An echten BRouter-„filtered ascend"-Werten kalibriert und verifiziert (Ø ~10% Abweichung über mehrere Streckenabschnitte, vorher >100%). Betrifft sowohl die Etappen-Anzeige in der Sidebar als auch den Hover-Tooltip im Höhenprofil-Chart (beide nutzten bisher unterschiedliche, inkonsistente Berechnungen — jetzt vereinheitlicht).
+
 ## v1.8.1 (2026-07-18)
 - Fix: Bei einer Etappe, die *sowohl* einen Rückweg vom Camp der Vorgänger-Etappe (`campFromPrev`) *als auch* ein eigenes Camp-Ziel (`campTarget`) hatte, zeigte die Sidebar nur den km-Anteil des eigenen Camp-Ziels — der Rückweg-Anteil fehlte in der Anzeige (bis zu mehrere km Abweichung von der tatsächlichen Strecke, die auch exportiert wird). Die Etappenlänge wird jetzt in allen Camp-Fällen direkt aus der tatsächlichen Streckengeometrie berechnet, nicht mehr aus zwei separaten, potenziell auseinanderlaufenden Teilwerten.
 

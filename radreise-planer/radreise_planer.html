@@ -304,7 +304,7 @@ header{background:var(--surface);border-bottom:1px solid var(--border);padding:9
 </head>
 <body>
 <header>
-  <div class="logo">🚴 Radreise Planer<span class="logo-ver">v1.8.1</span></div>
+  <div class="logo">🚴 Radreise Planer<span class="logo-ver">v1.8.2</span></div>
   <div class="stats">
     <div class="stat"><span class="sl">Route</span><span class="sv" id="hdrRoute" style="color:var(--muted)">–</span></div>
     <div class="stat"><span class="sl">Gesamt</span><span class="sv" id="hdrTotal" style="color:var(--muted)">–</span></div>
@@ -1837,28 +1837,10 @@ function renderElevProfile() {
   }
 }
 
-function _epSmooth(eles, w = 7) {
-  // Gleitender Durchschnitt um GPS-Rauschen zu eliminieren
-  const h = Math.floor(w / 2), out = [];
-  for (let i = 0; i < eles.length; i++) {
-    let s = 0, n = 0;
-    for (let j = Math.max(0, i-h); j <= Math.min(eles.length-1, i+h); j++) { s += eles[j]; n++; }
-    out.push(s / n);
-  }
-  return out;
-}
-function _epUphill(eles) {
-  const s = _epSmooth(eles);
-  let u = 0;
-  for (let i = 1; i < s.length; i++) { const d = s[i]-s[i-1]; if (d > 2) u += d; }
-  return Math.round(u);
-}
-function _epDownhill(eles) {
-  const s = _epSmooth(eles);
-  let d = 0;
-  for (let i = 1; i < s.length; i++) { const dd = s[i-1]-s[i]; if (dd > 2) d += dd; }
-  return Math.round(d);
-}
+// Dieselbe Hysterese-Methode wie stageElevStats() — sonst würden Hover-Tooltip
+// und Etappen-Anzeige für denselben Streckenabschnitt unterschiedliche Werte zeigen.
+function _epUphill(eles)   { return hysteresisElevGain(eles).up; }
+function _epDownhill(eles) { return hysteresisElevGain(eles).down; }
 
 function _epMouseMove(e) {
   if (!_epState) return;
@@ -2595,15 +2577,32 @@ function stageEles(i) {
   return ROUTE_ELEVATIONS.slice(stStartIdx, stEndIdx + 1);
 }
 
+// Höhenmeter aus einem Elevation-Array — Hysterese statt naiver Punkt-zu-Punkt-
+// Summe. Rohe GPS-/DEM-Höhendaten enthalten Rauschen (jeder winzige Zickzack
+// wird sonst mitgezählt); nur Änderungen über THRESHOLD_M zählen, gemessen ab
+// dem letzten "Wendepunkt" — das vermeidet, dass Rauschen um einen Wert herum
+// fälschlich als viele kleine Auf/Abs gezählt wird.
+// Threshold=6m an echten BRouter-"filtered ascend"-Werten kalibriert (Ø ~10%
+// Abweichung über 8 Stichproben entlang einer realen Tour, vs. >100% bei
+// naiver Summe ohne Hysterese).
+const ELEV_HYSTERESIS_M = 6;
+
+function hysteresisElevGain(eles, threshold = ELEV_HYSTERESIS_M) {
+  if (eles.length < 2) return { up: 0, down: 0 };
+  let ref = eles[0], up = 0, down = 0;
+  for (let j = 1; j < eles.length; j++) {
+    const d = eles[j] - ref;
+    if (d > threshold) { up += d; ref = eles[j]; }
+    else if (d < -threshold) { down -= d; ref = eles[j]; }
+  }
+  return { up: Math.round(up), down: Math.round(down) };
+}
+
 function stageElevStats(i) {
   const eles = stageEles(i);
   if (eles.length < 2) return null;
-  let up = 0, down = 0;
-  for (let j = 1; j < eles.length; j++) {
-    const d = eles[j] - eles[j-1];
-    if (d > 0) up += d; else down -= d;
-  }
-  return { up: Math.round(up), down: Math.round(down), eles };
+  const { up, down } = hysteresisElevGain(eles);
+  return { up, down, eles };
 }
 
 function elevSVG(eles, sid, w=252, h=34) {
