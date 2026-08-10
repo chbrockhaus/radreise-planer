@@ -306,7 +306,7 @@ header{background:var(--surface);border-bottom:1px solid var(--border);padding:9
 </head>
 <body>
 <header>
-  <div class="logo">🚴 Radreise Planer<span class="logo-ver">v1.9.2</span></div>
+  <div class="logo">🚴 Radreise Planer<span class="logo-ver">v1.9.3</span></div>
   <div class="stats">
     <div class="stat"><span class="sl">Route</span><span class="sv" id="hdrRoute" style="color:var(--muted)">–</span></div>
     <div class="stat"><span class="sl">Gesamt</span><span class="sv" id="hdrTotal" style="color:var(--muted)">–</span></div>
@@ -456,7 +456,7 @@ header{background:var(--surface);border-bottom:1px solid var(--border);padding:9
         <div class="ep-legend" id="epLegend"></div>
         <button class="ep-close" onclick="toggleElevProfile()" title="Schließen">✕</button>
       </div>
-      <div class="ep-svg-wrap" id="epSvgWrap" onmousemove="_epMouseMove(event)" onmouseleave="_epMouseLeave()">
+      <div class="ep-svg-wrap" id="epSvgWrap" onmousemove="_epMouseMove(event)" onmouseleave="_epMouseLeave()" onclick="_epClick(event)" style="cursor:pointer" title="Klick: Punkt auf der Karte anzeigen">
         <div class="ep-cursor" id="epCursor"></div>
         <div class="ep-tooltip" id="epTooltip"></div>
       </div>
@@ -1896,20 +1896,28 @@ function renderElevProfile() {
 function _epUphill(eles)   { return hysteresisElevGain(eles).up; }
 function _epDownhill(eles) { return hysteresisElevGain(eles).down; }
 
+// Index des nächstgelegenen Profilpunkts zur Maus-x-Position (innerhalb des
+// Plot-Bereichs), sonst -1. Von Hover UND Klick gemeinsam genutzt.
+function _epNearestIdx(mx) {
+  const { xs, PL, IW } = _epState;
+  if (mx < PL || mx > PL + IW) return -1;
+  let best = 0, bestD = Infinity;
+  for (let i = 0; i < xs.length; i++) {
+    const d = Math.abs(xs[i] - mx);
+    if (d < bestD) { bestD = d; best = i; }
+  }
+  return best;
+}
+
 function _epMouseMove(e) {
   if (!_epState) return;
   const wrap = document.getElementById('epSvgWrap');
   if (!wrap) return;
   const rect = wrap.getBoundingClientRect();
   const mx = e.clientX - rect.left;
-  const { xs, ys, eles, slopes, dists, idxs, pts, startKm, PL, PT, IW } = _epState;
-  if (mx < PL || mx > PL + IW) { _epMouseLeave(); return; }
-
-  let best = 0, bestD = Infinity;
-  for (let i = 0; i < xs.length; i++) {
-    const d = Math.abs(xs[i] - mx);
-    if (d < bestD) { bestD = d; best = i; }
-  }
+  const { xs, eles, slopes, dists, pts, startKm } = _epState;
+  const best = _epNearestIdx(mx);
+  if (best < 0) { _epMouseLeave(); return; }
 
   const ele = Math.round(eles[best]);
   const slope = slopes[best];
@@ -1940,6 +1948,27 @@ function _epMouseMove(e) {
       _epCrosshairMarker.setLatLng(pts[best]);
       _epCrosshairMarker.setStyle({ fillColor: col });
     }
+  }
+}
+
+// Klick auf einen Punkt im Höhenprofil: Karte auf diesen Punkt zeigen — nur
+// verschieben, wenn er aktuell nicht (ausreichend nah gezoomt) sichtbar ist.
+function _epClick(e) {
+  if (!_epState) return;
+  const wrap = document.getElementById('epSvgWrap');
+  if (!wrap || !leafletMap) return;
+  const rect = wrap.getBoundingClientRect();
+  const mx = e.clientX - rect.left;
+  const best = _epNearestIdx(mx);
+  if (best < 0) return;
+  const pt = _epState.pts[best];
+  if (!pt) return;
+
+  const MIN_ZOOM = 14;
+  const latlng = L.latLng(pt[0], pt[1]);
+  const alreadyVisible = leafletMap.getZoom() >= MIN_ZOOM && leafletMap.getBounds().pad(-0.1).contains(latlng);
+  if (!alreadyVisible) {
+    leafletMap.flyTo(latlng, Math.max(leafletMap.getZoom(), MIN_ZOOM), { duration: 0.6 });
   }
 }
 

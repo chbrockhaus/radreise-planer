@@ -1,5 +1,8 @@
 # Changelog — Radreise Planer
 
+## v1.9.3 (2026-08-11)
+- **Neu: Klick ins Höhenprofil zeigt den Punkt auf der Karte.** Bisher gab es nur beim Hover einen kleinen Marker an der entsprechenden Stelle — die Karte selbst blieb aber unverändert, auch wenn der Punkt weit außerhalb des sichtbaren Ausschnitts lag. Ein Klick auf eine Stelle im Höhenprofil verschiebt (und zoomt bei Bedarf) die Karte jetzt so, dass der Punkt sichtbar wird. Ist er bereits ausreichend nah sichtbar, bewegt sich die Karte nicht unnötig.
+
 ## v1.9.2 (2026-07-19)
 - Fix: Im Plan-Modus („+ Neue Tour" → „✏ Tour planen") blieben die Karte und die Etappen-Sidebar einer bereits geladenen Tour während des gesamten Planens sichtbar — verwirrend, da alte und neu geklickte Route sich überlagerten. Karte und Sidebar werden jetzt beim Start des Plan-Modus geleert; bricht man ab, erscheint die alte Tour unverändert wieder (nichts wird bis zum tatsächlichen Fertigstellen zerstört).
 
