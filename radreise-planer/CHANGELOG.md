@@ -1,5 +1,8 @@
 # Changelog — Radreise Planer
 
+## v1.9.2 (2026-07-19)
+- Fix: Im Plan-Modus („+ Neue Tour" → „✏ Tour planen") blieben die Karte und die Etappen-Sidebar einer bereits geladenen Tour während des gesamten Planens sichtbar — verwirrend, da alte und neu geklickte Route sich überlagerten. Karte und Sidebar werden jetzt beim Start des Plan-Modus geleert; bricht man ab, erscheint die alte Tour unverändert wieder (nichts wird bis zum tatsächlichen Fertigstellen zerstört).
+
 ## v1.9.1 (2026-07-19)
 - **Neu: Tour verlängern.** Neuer Header-Button „🧭 Verlängern" — Klick auf die Karte setzt ein neues Ziel, die App routet vom bisherigen Streckenende dorthin und hängt den neuen Abschnitt an die bestehende Tour an. Bestehende Etappen (Länge, Camp-Ziele, Notizen) bleiben dabei komplett unangetastet — es werden nur so viele neue Etappen wie nötig ergänzt, um den neu hinzugekommenen Abschnitt abzudecken, benannt nach dem neuen Ziel.
 

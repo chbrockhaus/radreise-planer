@@ -306,7 +306,7 @@ header{background:var(--surface);border-bottom:1px solid var(--border);padding:9
 </head>
 <body>
 <header>
-  <div class="logo">🚴 Radreise Planer<span class="logo-ver">v1.9.1</span></div>
+  <div class="logo">🚴 Radreise Planer<span class="logo-ver">v1.9.2</span></div>
   <div class="stats">
     <div class="stat"><span class="sl">Route</span><span class="sv" id="hdrRoute" style="color:var(--muted)">–</span></div>
     <div class="stat"><span class="sl">Gesamt</span><span class="sv" id="hdrTotal" style="color:var(--muted)">–</span></div>
@@ -374,7 +374,7 @@ header{background:var(--surface);border-bottom:1px solid var(--border);padding:9
           <input id="planRouteNameOverlay" class="plan-name-inp" type="text" placeholder="Tour-Name">
           <button class="plan-action-btn" id="planUndoBtn" onclick="undoLastPlanWaypoint()" disabled>↩ Zurück</button>
           <button class="plan-action-btn ok" id="planFinishBtn" onclick="finishPlanRoute()" disabled>✓ Fertig</button>
-          <button class="plan-action-btn" onclick="stopPlanMode();showTourModal()" title="Abbrechen">✕</button>
+          <button class="plan-action-btn" onclick="cancelPlanMode()" title="Abbrechen">✕</button>
         </div>
       </div>
     </div>
@@ -3479,9 +3479,28 @@ let planPolyline     = null;
 let planMarkers      = [];
 let planRouting      = false;
 
+// Blendet eine evtl. vorhandene Tour aus Karte + Sidebar aus, OHNE ihre Daten
+// anzutasten — beim Abbrechen des Plan-Modus wird sie per showExistingRoute()
+// einfach wieder gezeichnet. Sonst bliebe die alte Route/Sidebar während des
+// gesamten Planens sichtbar (Plan-Overlay verlässt den Modal-Hintergrund, der
+// die Karte sonst verdeckt).
+function hideExistingRouteDisplay() {
+  _mainRoutePolylines.forEach(l => leafletMap.removeLayer(l)); _mainRoutePolylines = [];
+  customRouteLayers.forEach(l => leafletMap.removeLayer(l));   customRouteLayers = [];
+  stageMarkers.forEach(m => leafletMap.removeLayer(m));        stageMarkers = [];
+  campsiteMarkers.forEach(m => leafletMap.removeLayer(m));     campsiteMarkers = [];
+  clearWpMarkers();
+  document.getElementById('stagesEl').innerHTML = '';
+}
+
+function showExistingRouteDisplay() {
+  drawCustomRoutes(); render(); drawMarkers();
+}
+
 function startPlanMode() {
   const tourName = document.getElementById('planRouteName').value.trim() || 'Meine Tour';
   hideTourModal();
+  hideExistingRouteDisplay();
   planMode         = true;
   planWaypoints    = [];
   planSegments     = [];
@@ -3496,6 +3515,12 @@ function startPlanMode() {
   document.getElementById('planOverlay').classList.add('open');
   leafletMap.on('click', planModeClick);
   updatePlanOverlay();
+}
+
+function cancelPlanMode() {
+  stopPlanMode();
+  showExistingRouteDisplay();
+  showTourModal();
 }
 
 function stopPlanMode() {
