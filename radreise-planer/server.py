@@ -240,6 +240,8 @@ class Handler(http.server.SimpleHTTPRequestHandler):
             self._proxy_brouter()
         elif p.startswith('/api/overpass'):
             self._proxy_overpass()
+        elif p.startswith('/api/geocode'):
+            self._proxy_geocode()
         else:
             super().do_GET()
 
@@ -430,6 +432,28 @@ class Handler(http.server.SimpleHTTPRequestHandler):
                 last_err = f'{host}: {type(e).__name__}'
                 continue
         self._json(502, {'error': f'Overpass nicht erreichbar ({last_err})'})
+
+    def _proxy_geocode(self):
+        """Proxied Nominatim-Ortssuche serverseitig — Nominatims Nutzungsbedingungen
+        verlangen einen aussagekräftigen User-Agent statt Browser-Referrer."""
+        qs = self.path[len('/api/geocode'):]  # ?q=...&format=json&limit=5
+        url = 'https://nominatim.openstreetmap.org/search' + qs
+        try:
+            req = urllib.request.Request(
+                url,
+                headers={'User-Agent': 'RadreisePlaner/1.0 (Bikepacking-Routenplaner)', 'Accept': 'application/json'}
+            )
+            with urllib.request.urlopen(req, timeout=10) as resp:
+                data = resp.read()
+            self.send_response(200)
+            self.send_header('Content-Type', 'application/json')
+            self._cors()
+            self.end_headers()
+            self._safe_write(data)
+        except urllib.error.HTTPError as e:
+            self._json(e.code, {'error': f'Nominatim HTTP {e.code}'})
+        except Exception as e:
+            self._json(502, {'error': f'Nominatim nicht erreichbar ({type(e).__name__})'})
 
     def _proxy_overpass_post(self, body: bytes):
         """POST-Variante: body = b'data=<url-encoded-query>' (lange around-Abfragen)."""

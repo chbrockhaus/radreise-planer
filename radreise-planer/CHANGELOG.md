@@ -1,5 +1,8 @@
 # Changelog — Radreise Planer
 
+## v1.9.4 (2026-08-11)
+- **Neu: Ortssuche auf der Karte.** Neuer 🔍-Button in den Kartensteuerelementen — Ort, Adresse oder POI eingeben, aus den Treffern wählen, die Karte springt dorthin und setzt einen Marker. Läuft über einen neuen serverseitigen Proxy zu Nominatim (`/api/geocode`), damit kein CORS-Problem im Browser entsteht und Nominatims Nutzungsbedingungen (eigener User-Agent) eingehalten werden.
+
 ## v1.9.3 (2026-08-11)
 - **Neu: Klick ins Höhenprofil zeigt den Punkt auf der Karte.** Bisher gab es nur beim Hover einen kleinen Marker an der entsprechenden Stelle — die Karte selbst blieb aber unverändert, auch wenn der Punkt weit außerhalb des sichtbaren Ausschnitts lag. Ein Klick auf eine Stelle im Höhenprofil verschiebt (und zoomt bei Bedarf) die Karte jetzt so, dass der Punkt sichtbar wird. Ist er bereits ausreichend nah sichtbar, bewegt sich die Karte nicht unnötig.
 

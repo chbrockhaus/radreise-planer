@@ -220,6 +220,11 @@ header{background:var(--surface);border-bottom:1px solid var(--border);padding:9
 #planOverlay.open{display:flex}
 #extendOverlay{display:none;position:absolute;top:12px;left:0;right:0;z-index:1100;justify-content:center;pointer-events:none}
 #extendOverlay.open{display:flex}
+#locationSearchOverlay{display:none;position:absolute;top:12px;left:0;right:0;z-index:1100;justify-content:center;pointer-events:none}
+#locationSearchOverlay.open{display:flex}
+.loc-search-results{display:flex;flex-direction:column;gap:2px;max-height:220px;overflow-y:auto}
+.loc-search-result{background:var(--surface2);border:1px solid var(--border);border-radius:4px;padding:6px 8px;cursor:pointer;font-size:11px;text-align:left;color:var(--text);font-family:'DM Sans',sans-serif}
+.loc-search-result:hover{background:var(--accent);color:#fff;border-color:var(--accent)}
 .plan-panel{background:rgba(24,28,36,.95);border:1px solid var(--border);border-radius:8px;padding:12px 16px;min-width:340px;max-width:520px;pointer-events:all;display:flex;flex-direction:column;gap:8px}
 .plan-title{font-size:10px;color:var(--accent);font-weight:600;text-transform:uppercase;letter-spacing:.05em}
 #planStatus{font-size:12px;color:var(--text);min-height:18px}
@@ -306,7 +311,7 @@ header{background:var(--surface);border-bottom:1px solid var(--border);padding:9
 </head>
 <body>
 <header>
-  <div class="logo">🚴 Radreise Planer<span class="logo-ver">v1.9.3</span></div>
+  <div class="logo">🚴 Radreise Planer<span class="logo-ver">v1.9.4</span></div>
   <div class="stats">
     <div class="stat"><span class="sl">Route</span><span class="sv" id="hdrRoute" style="color:var(--muted)">–</span></div>
     <div class="stat"><span class="sl">Gesamt</span><span class="sv" id="hdrTotal" style="color:var(--muted)">–</span></div>
@@ -395,11 +400,26 @@ header{background:var(--surface);border-bottom:1px solid var(--border);padding:9
       <button class="map-btn" onclick="zoomMap(1)" title="Zoom in">+</button>
       <button class="map-btn" onclick="zoomMap(-1)" title="Zoom out">−</button>
       <button class="map-btn" onclick="resetView()" title="Übersicht" style="font-size:13px">⊡</button>
+      <button class="map-btn" id="locSearchBtn" onclick="toggleLocationSearch()" title="Ort suchen" style="font-size:15px">🔍</button>
       <button class="map-btn" id="editModeBtn" onclick="toggleEditMode()" title="Etappengrenzen verschieben" style="font-size:13px">✏</button>
       <button class="map-btn" id="routeEditBtn" onclick="toggleRouteEditMode()" title="Route bearbeiten: Klick auf Linie → Wegpunkt setzen" style="font-size:15px">⤴</button>
       <button class="map-btn" id="layerBtn" onclick="switchTileLayer()" title="Karte wechseln" style="font-size:11px;font-weight:700">🗺</button>
 
       <button class="map-btn" id="elevProfileBtn" onclick="toggleElevProfile()" title="Höhenprofil ein-/ausblenden" style="font-size:13px">⛰</button>
+    </div>
+    <!-- Ortssuche -->
+    <div id="locationSearchOverlay">
+      <div class="plan-panel">
+        <div class="plan-title">🔍 Ort suchen</div>
+        <div class="plan-actions">
+          <input id="locSearchInp" class="plan-name-inp" type="text" placeholder="Ort, Adresse, POI…"
+            onkeydown="if(event.key==='Enter')runLocationSearch();if(event.key==='Escape')toggleLocationSearch()">
+          <button class="plan-action-btn ok" onclick="runLocationSearch()">Suchen</button>
+          <button class="plan-action-btn" onclick="toggleLocationSearch()" title="Schließen">✕</button>
+        </div>
+        <div id="locSearchStatus" style="font-size:11px;color:var(--muted)"></div>
+        <div id="locSearchResults" class="loc-search-results"></div>
+      </div>
     </div>
     <!-- POI-Panel (Feature 4) -->
     <div id="poiPanel">
@@ -3827,6 +3847,74 @@ async function extendTour(destLat, destLon, destName) {
   buildMainRouteLayer();
   drawCustomRoutes(); render(); drawMarkers();
   if (ROUTE_PTS.length) leafletMap.fitBounds(L.polyline(ROUTE_PTS).getBounds(), { padding: [40, 40] });
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// ORTSSUCHE (🔍-Button, Nominatim über /api/geocode-Proxy)
+// ─────────────────────────────────────────────────────────────────────────────
+let _locSearchResults = [];
+let _locSearchMarker  = null;
+
+function _escHtml(s) {
+  return String(s ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+
+function toggleLocationSearch() {
+  const el = document.getElementById('locationSearchOverlay');
+  const opening = !el.classList.contains('open');
+  el.classList.toggle('open', opening);
+  if (opening) {
+    document.getElementById('locSearchInp').value = '';
+    document.getElementById('locSearchStatus').textContent = '';
+    document.getElementById('locSearchResults').innerHTML = '';
+    _locSearchResults = [];
+    setTimeout(() => document.getElementById('locSearchInp').focus(), 50);
+  } else if (_locSearchMarker) {
+    leafletMap.removeLayer(_locSearchMarker);
+    _locSearchMarker = null;
+  }
+}
+
+async function runLocationSearch() {
+  const q = document.getElementById('locSearchInp').value.trim();
+  const statusEl  = document.getElementById('locSearchStatus');
+  const resultsEl = document.getElementById('locSearchResults');
+  resultsEl.innerHTML = '';
+  _locSearchResults = [];
+  if (!q) return;
+  statusEl.textContent = '⏳ Suche…';
+  try {
+    const r = await fetch(`/api/geocode?q=${encodeURIComponent(q)}&format=json&limit=6&addressdetails=0`);
+    if (!r.ok) throw new Error('HTTP ' + r.status);
+    const results = await r.json();
+    if (!results.length) { statusEl.textContent = '⚠ Kein Ort gefunden'; return; }
+    _locSearchResults = results;
+    statusEl.textContent = `${results.length} Treffer`;
+    resultsEl.innerHTML = results.map((res, i) =>
+      `<button class="loc-search-result" onclick="selectLocationResult(${i})">${_escHtml(res.display_name)}</button>`
+    ).join('');
+  } catch (e) {
+    statusEl.textContent = '⚠ Suche fehlgeschlagen: ' + e.message;
+  }
+}
+
+function selectLocationResult(i) {
+  const res = _locSearchResults[i];
+  if (!res || !leafletMap) return;
+  const latlng = L.latLng(parseFloat(res.lat), parseFloat(res.lon));
+
+  if (_locSearchMarker) leafletMap.removeLayer(_locSearchMarker);
+  _locSearchMarker = L.marker(latlng, {
+    icon: L.divIcon({
+      className: '',
+      html: `<div style="width:18px;height:18px;background:#a855f7;border:2.5px solid #fff;border-radius:50%"></div>`,
+      iconSize: [18, 18], iconAnchor: [9, 9]
+    })
+  }).addTo(leafletMap).bindTooltip(_escHtml(res.display_name), { direction: 'top', offset: [0, -10] });
+  _locSearchMarker.openTooltip();
+
+  leafletMap.flyTo(latlng, 14, { duration: 0.6 });
+  document.getElementById('locationSearchOverlay').classList.remove('open');
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
