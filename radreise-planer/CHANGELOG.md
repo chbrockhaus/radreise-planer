@@ -1,5 +1,8 @@
 # Changelog — Radreise Planer
 
+## v1.9.7 (2026-08-11)
+- **Fehlermeldungen bei OSM-Abfragen sagen jetzt, was wirklich los ist.** Bisher hieß es pauschal „Overpass nicht erreichbar (Wartung/Überlastung?)" — egal ob die Server gedrosselt haben, überlastet waren oder tatsächlich ausgefallen sind. Jetzt wird unterschieden: Bei Drosselung (429) oder Überlastung (504/Zeitüberschreitung) steht sinngemäß „Server gerade überlastet — legt sich meist nach ein paar Minuten, bereits geladene Ergebnisse bleiben nutzbar", statt einen Ausfall zu suggerieren. Im OSM-Aktivitätsprotokoll steht zudem pro Server der genaue Grund (z. B. „overpass-api.de: HTTP 504; kumi.systems: Zeitüberschreitung"), sodass man sieht, ob es an einem einzelnen Server liegt oder an allen.
+
 ## v1.9.6 (2026-08-11)
 - **Fix: „Erst schnell, danach viel zu langsam".** Wurde die Karte verschoben oder gezoomt, während eine OSM-Abfrage lief, startete die App zusätzliche Abfragen, ohne die alten abzubrechen — bei mehrmaligem Verschieben stapelten sich die Anfragen. Die öffentlichen OSM-Server drosseln daraufhin, wodurch alles Folgende zäh wurde. Jetzt wird eine überholte Abfrage derselben Kategorie sofort abgebrochen (gemessen: nach 50–500 ms statt bis zum Ende). Zusätzlich behoben: es wurde nur die jeweils letzte Abfrage als abbrechbar vermerkt, ältere liefen unkontrolliert weiter.
 - **Neu: OSM-Aktivitätsprotokoll** (🛰-Schaltfläche bei den Kartensteuerelementen). Zeigt laufende Abfragen mit mitlaufender Dauer sowie beendete mit Ergebnis: Trefferzahl, Dauer, ob die Antwort aus dem Zwischenspeicher kam, abgebrochen oder fehlgeschlagen. Damit ist nachvollziehbar, was im Hintergrund passiert.

@@ -328,7 +328,7 @@ header{background:var(--surface);border-bottom:1px solid var(--border);padding:9
 </head>
 <body>
 <header>
-  <div class="logo">🚴 Radreise Planer<span class="logo-ver">v1.9.6</span></div>
+  <div class="logo">🚴 Radreise Planer<span class="logo-ver">v1.9.7</span></div>
   <div class="stats">
     <div class="stat"><span class="sl">Route</span><span class="sv" id="hdrRoute" style="color:var(--muted)">–</span></div>
     <div class="stat"><span class="sl">Gesamt</span><span class="sv" id="hdrTotal" style="color:var(--muted)">–</span></div>
@@ -2187,11 +2187,18 @@ async function overpassFetch(q, timeoutMs = OVERPASS_TIMEOUT, opts = {}){
     return { signal };
   };
 
+  let failDetail = '';   // Begründung des Servers (welcher Endpoint warum scheiterte)
   try {
     const res = await Promise.any(
       OVERPASS_ENDPOINTS.map(async (ep, i) => {
         const r = await fetch(usePost ? ep : ep + param, mkOpts(i));
-        if (!r.ok) throw new Error('HTTP ' + r.status);
+        if (!r.ok) {
+          // Der Proxy legt im Body offen, welcher Server warum abgelehnt hat
+          let detail = 'HTTP ' + r.status;
+          try { const j = await r.json(); detail = j?.detail || j?.error || detail; } catch {}
+          failDetail = detail;
+          throw new Error(detail);
+        }
         ctls.forEach((c, j) => { if (j !== i) c.abort(); }); // andere sofort abbrechen
         // Server meldet über den Header, ob die Antwort aus seinem Cache kam
         return { data: await r.json(), cached: r.headers.get('X-Overpass-Cache') === 'hit' };
@@ -2217,8 +2224,16 @@ async function overpassFetch(q, timeoutMs = OVERPASS_TIMEOUT, opts = {}){
       _osmLogEnd(logEntry, 'err', { msg: 'file:// — lokalen Server nutzen' });
       throw new Error('Datei als file:// geöffnet – bitte über lokalem Server öffnen:\npython -m http.server 3000\n→ http://localhost:3000/radreise_planer.html');
     }
-    _osmLogEnd(logEntry, 'err', { msg: 'nicht erreichbar' });
-    throw new Error('Overpass (OSM-Datenbank) nicht erreichbar – evtl. Wartung oder Überlastung. Die Karte funktioniert, nur die POI-/Camping-Suche ist betroffen. Bitte später erneut versuchen.');
+    // Drosselung (429) und Überlastung (504/Zeitüberschreitung) sind KEIN Ausfall —
+    // sie gehen von selbst weg. Das muss anders klingen als "Server weg", sonst
+    // sucht man den Fehler an der falschen Stelle.
+    const busy = /Drosselung|429|504|Zeitüberschreitung/.test(failDetail);
+    _osmLogEnd(logEntry, 'err', { msg: failDetail || 'nicht erreichbar' });
+    const err = new Error(busy
+      ? `OSM-Server sind gerade überlastet oder drosseln (${failDetail}). Das legt sich meist nach ein paar Minuten — bereits geladene Ergebnisse bleiben nutzbar.`
+      : `OSM-Datenbank nicht erreichbar${failDetail ? ' (' + failDetail + ')' : ''} – evtl. Wartung. Die Karte funktioniert, nur die POI-/Camping-Suche ist betroffen.`);
+    err._throttled = busy;
+    throw err;
   } finally {
     _overpassActive--;
     _overpassInflight.delete(ownCtl);
@@ -5215,7 +5230,9 @@ async function _fetchPoiCat(id) {
   } catch(err) {
     if (err?.name === 'AbortError') return;   // durch neueres Pan/Zoom überholt
     console.warn('POI fetch:', err);
-    _overpassHintShow(`⚠ ${cat.icon} ${cat.label}: Overpass nicht erreichbar (Wartung/Überlastung?) — Karte läuft, später erneut versuchen`, 5000);
+    _overpassHintShow(err?._throttled
+      ? `⏳ ${cat.icon} ${cat.label}: OSM-Server gerade überlastet — in ein paar Minuten erneut versuchen`
+      : `⚠ ${cat.icon} ${cat.label}: OSM nicht erreichbar — Karte läuft, später erneut versuchen`, 5000);
   }
 }
 
@@ -5272,7 +5289,9 @@ async function _fetchPoiCatRoute(id, cat) {
   } catch(err) {
     if (err?.name === 'AbortError') return;   // durch neueres Pan/Zoom überholt
     console.warn('POI route fetch:', err);
-    _overpassHintShow('⚠ Strecken-POI-Abfrage fehlgeschlagen', 3000);
+    _overpassHintShow(err?._throttled
+      ? `⏳ ${cat.icon} ${cat.label}: OSM-Server gerade überlastet — in ein paar Minuten erneut versuchen`
+      : '⚠ Strecken-POI-Abfrage fehlgeschlagen', 4000);
   }
 }
 

@@ -278,7 +278,7 @@ def _overpass_race(qs='', body=None, timeout=OVERPASS_TIMEOUT):
 
     futures = {_OVERPASS_POOL.submit(_overpass_fetch_one, ep, qs, body, timeout): ep
                for ep in OVERPASS_ENDPOINTS}
-    last_err = 'keine Antwort'
+    errs = []
     try:
         for fut in concurrent.futures.as_completed(futures, timeout=timeout + 2):
             host = futures[fut].split('/')[2]
@@ -288,16 +288,18 @@ def _overpass_race(qs='', body=None, timeout=OVERPASS_TIMEOUT):
                     _overpass_cache_put(ckey, data)
                     return data, None
             except urllib.error.HTTPError as e:
-                last_err = f'{host}: HTTP {e.code}'
+                # 429 = Drosselung wegen zu vieler Abfragen — für den Nutzer klar
+                # unterscheidbar von "Server weg", denn hier hilft nur abwarten.
+                errs.append(f'{host}: {"Drosselung (429)" if e.code == 429 else f"HTTP {e.code}"}')
             except Exception as e:
-                last_err = f'{host}: {type(e).__name__}'
+                errs.append(f'{host}: {"Zeitüberschreitung" if isinstance(e, (TimeoutError, socket.timeout)) else type(e).__name__}')
     except concurrent.futures.TimeoutError:
-        last_err = 'Zeitüberschreitung'
+        errs.append('Gesamt-Zeitüberschreitung')
     finally:
         # Noch nicht gestartete abbrechen; laufende beenden sich per eigenem Timeout.
         for fut in futures:
             fut.cancel()
-    return None, last_err
+    return None, '; '.join(errs) or 'keine Antwort'
 
 
 # ── HTTP-Handler ──────────────────────────────────────────────────────────────
@@ -522,7 +524,9 @@ class Handler(http.server.SimpleHTTPRequestHandler):
         """Gemeinsame Antwort für GET- und POST-Variante.
         err == 'CACHE' bedeutet Erfolg aus dem Zwischenspeicher."""
         if data is None:
-            self._json(502, {'error': f'Overpass nicht erreichbar ({err})'})
+            # 'detail' enthält NUR die Gründe je Server — das Frontend baut daraus
+            # seinen eigenen Satz (sonst verschachteln sich zwei Meldungen).
+            self._json(502, {'error': f'Overpass nicht erreichbar ({err})', 'detail': err})
             return
         self.send_response(200)
         self.send_header('Content-Type', 'application/json')
