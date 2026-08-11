@@ -1,5 +1,8 @@
 # Changelog — Radreise Planer
 
+## v1.10.2 (2026-08-11)
+- **Das OSM-Protokollfenster ist jetzt deutlich größer und in der Größe verstellbar.** Standard ist gut doppelt so breit und doppelt so hoch wie bisher (640 × 560 statt 310 Pixel breit). Am blau schraffierten Griff oben links lässt es sich beliebig größer oder kleiner ziehen — das Fenster hängt unten rechts fest, wächst also nach oben und links und läuft nie über den Kartenrand hinaus. Die eingestellte Größe bleibt für das nächste Mal gespeichert. Die Abfrageliste wächst dabei mit.
+
 ## v1.10.1 (2026-08-11)
 - **Fix: „811 Treffer" gemeldet, aber keine Punkte auf der Karte** — erst Aus- und Wiedereinschalten der Kategorie machte sie sichtbar. Ursache: Die App merkt sich je Kategorie, welche Orte schon gezeichnet sind (damit beim Verschieben keine doppelten Punkte entstehen). An zwei Stellen wurden die Punkte von der Karte genommen, ohne diese Merkliste zu leeren — danach galt jeder Treffer als „schon vorhanden" und wurde übersprungen. Betraf vor allem den Fall „zu weit herausgezoomt, dann wieder hinein" sowie den Abbrechen-Knopf. Beides läuft jetzt über eine gemeinsame Funktion, die immer beides zurücksetzt.
 - **Mehr Infos im OSM-Protokollfenster** (🛰-Schaltfläche):

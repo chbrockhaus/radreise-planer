@@ -273,13 +273,19 @@ header{background:var(--surface);border-bottom:1px solid var(--border);padding:9
 #poiSettingsPanel{position:absolute;top:12px;right:52px;background:rgba(18,22,32,.97);border:1px solid var(--border);border-radius:8px;padding:10px 12px;width:165px;z-index:1002;display:none;flex-direction:column;gap:6px;box-shadow:0 4px 16px rgba(0,0,0,.5)}
 #poiSettingsPanel.open{display:flex}
 /* ── OSM-Aktivitätsprotokoll ── */
-#osmLogPanel{position:absolute;bottom:12px;right:12px;width:310px;background:rgba(18,22,32,.97);border:1px solid var(--border);border-radius:8px;z-index:1002;display:none;flex-direction:column;box-shadow:0 4px 16px rgba(0,0,0,.5);overflow:hidden}
+#osmLogPanel{position:absolute;bottom:12px;right:12px;width:640px;height:560px;min-width:280px;min-height:200px;max-width:calc(100% - 24px);max-height:calc(100% - 24px);background:rgba(18,22,32,.97);border:1px solid var(--border);border-radius:8px;z-index:1002;display:none;flex-direction:column;box-shadow:0 4px 16px rgba(0,0,0,.5);overflow:hidden}
+/* Anfasser oben links: das Fenster hängt unten rechts fest, es wächst also
+   nach oben/links — dort muss auch der Griff sitzen. */
+.osmlog-grip{position:absolute;top:0;left:0;width:20px;height:20px;cursor:nwse-resize;z-index:3;opacity:.75;
+  border-top-left-radius:8px;
+  background:repeating-linear-gradient(135deg,transparent 0 3px,var(--accent) 3px 4.5px)}
+.osmlog-grip:hover{opacity:1;background:repeating-linear-gradient(135deg,rgba(61,142,255,.18) 0 3px,var(--accent) 3px 4.5px)}
 #osmLogPanel.open{display:flex}
 .osmlog-head{display:flex;align-items:center;gap:6px;padding:8px 10px;border-bottom:1px solid var(--border);font-size:10px;text-transform:uppercase;letter-spacing:.05em;color:var(--accent);font-weight:600}
 .osmlog-head button{margin-left:auto;background:transparent;border:1px solid var(--border);color:var(--muted);border-radius:4px;padding:2px 6px;font-size:10px;cursor:pointer;font-family:'DM Sans',sans-serif;text-transform:none;letter-spacing:0}
 .osmlog-head button:hover{background:var(--surface2);color:var(--text)}
 .osmlog-head button+button{margin-left:0}
-#osmLogList{max-height:230px;overflow-y:auto;padding:4px}
+#osmLogList{flex:1;min-height:0;overflow-y:auto;padding:4px}
 .osmlog-row{display:flex;align-items:baseline;gap:6px;padding:4px 6px;border-radius:4px;font-size:11px;line-height:1.35}
 .osmlog-row+.osmlog-row{margin-top:2px}
 .osmlog-row.run{background:rgba(61,142,255,.12)}
@@ -335,7 +341,7 @@ header{background:var(--surface);border-bottom:1px solid var(--border);padding:9
 </head>
 <body>
 <header>
-  <div class="logo">🚴 Radreise Planer<span class="logo-ver">v1.10.1</span></div>
+  <div class="logo">🚴 Radreise Planer<span class="logo-ver">v1.10.2</span></div>
   <div class="stats">
     <div class="stat"><span class="sl">Route</span><span class="sv" id="hdrRoute" style="color:var(--muted)">–</span></div>
     <div class="stat"><span class="sl">Gesamt</span><span class="sv" id="hdrTotal" style="color:var(--muted)">–</span></div>
@@ -434,6 +440,7 @@ header{background:var(--surface);border-bottom:1px solid var(--border);padding:9
     </div>
     <!-- OSM-Aktivitätsprotokoll -->
     <div id="osmLogPanel">
+      <div class="osmlog-grip" id="osmLogGrip" title="Größe ändern"></div>
       <div class="osmlog-head">
         <span>🛰 OSM-Aktivität</span>
         <button onclick="clearOsmLog()">Leeren</button>
@@ -2092,7 +2099,46 @@ function toggleOsmLog() {
   const open = !el.classList.contains('open');
   el.classList.toggle('open', open);
   document.getElementById('osmLogBtn')?.classList.toggle('active', open);
-  if (open) { _renderOsmLog(); _loadOsmSrvState(); }
+  if (open) { _initOsmLogResize(); _renderOsmLog(); _loadOsmSrvState(); }
+}
+
+// Größe des Protokollfensters: ziehbar am Griff oben links, gemerkt in
+// localStorage. Erst beim ersten Öffnen eingehängt — vorher gibt es nichts zu tun.
+let _osmLogResizeReady = false;
+function _initOsmLogResize() {
+  if (_osmLogResizeReady) return;
+  const panel = document.getElementById('osmLogPanel');
+  const grip  = document.getElementById('osmLogGrip');
+  if (!panel || !grip) return;
+  _osmLogResizeReady = true;
+
+  try {
+    const gemerkt = JSON.parse(localStorage.getItem('osmLogSize') || 'null');
+    if (gemerkt?.w && gemerkt?.h) {
+      panel.style.width  = gemerkt.w + 'px';
+      panel.style.height = gemerkt.h + 'px';
+    }
+  } catch {}
+
+  grip.addEventListener('mousedown', ev => {
+    ev.preventDefault(); ev.stopPropagation();
+    const x0 = ev.clientX, y0 = ev.clientY;
+    const w0 = panel.offsetWidth, h0 = panel.offsetHeight;
+    const box = panel.parentElement.getBoundingClientRect();
+    const zieh = e => {
+      // nach links/oben ziehen = größer (das Fenster hängt unten rechts fest)
+      panel.style.width  = Math.max(280, Math.min(w0 + (x0 - e.clientX), box.width  - 24)) + 'px';
+      panel.style.height = Math.max(200, Math.min(h0 + (y0 - e.clientY), box.height - 24)) + 'px';
+    };
+    const fertig = () => {
+      document.removeEventListener('mousemove', zieh);
+      document.removeEventListener('mouseup', fertig);
+      localStorage.setItem('osmLogSize',
+        JSON.stringify({ w: panel.offsetWidth, h: panel.offsetHeight }));
+    };
+    document.addEventListener('mousemove', zieh);
+    document.addEventListener('mouseup', fertig);
+  });
 }
 
 // 'overpass.kumi.systems' → 'kumi', 'lambert.openstreetmap.de' → 'lambert'
