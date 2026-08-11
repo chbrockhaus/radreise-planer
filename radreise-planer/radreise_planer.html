@@ -328,7 +328,7 @@ header{background:var(--surface);border-bottom:1px solid var(--border);padding:9
 </head>
 <body>
 <header>
-  <div class="logo">🚴 Radreise Planer<span class="logo-ver">v1.9.8</span></div>
+  <div class="logo">🚴 Radreise Planer<span class="logo-ver">v1.9.9</span></div>
   <div class="stats">
     <div class="stat"><span class="sl">Route</span><span class="sv" id="hdrRoute" style="color:var(--muted)">–</span></div>
     <div class="stat"><span class="sl">Gesamt</span><span class="sv" id="hdrTotal" style="color:var(--muted)">–</span></div>
@@ -1766,8 +1766,13 @@ function hav(la1,lo1,la2,lo2){
 // gemessen 2026-08 scheiterten alle vier (CORS bzw. Rate-Limit/Timeout), während
 // dieselben Server serverseitig in 2–3 s antworten.
 const OVERPASS_ENDPOINTS=['/api/overpass'];
-const OVERPASS_TIMEOUT       = 30000; // ms für normale Abfragen
-const OVERPASS_TIMEOUT_ROUTE = 75000; // ms für Strecken-Abfragen (around:Radius entlang Route)
+// Diese Werte MÜSSEN über dem Zeitbudget des Proxys liegen, sonst bricht der
+// Browser eine Abfrage ab, die der Server gerade noch beantwortet hätte
+// (Symptom: „bricht ab" ohne Fehlermeldung vom Server).
+// Budget server.py: OVERPASS_QUEUE_WAIT 15s + (OVERPASS_TIMEOUT 20s (GET) bzw.
+// OVERPASS_TIMEOUT_POST 40s) + 8s für Nachschalten/Wiederholung ≈ 43s / 63s.
+const OVERPASS_TIMEOUT       = 50000; // ms für normale Abfragen (GET)
+const OVERPASS_TIMEOUT_ROUTE = 80000; // ms für Strecken-Abfragen (POST, around:Radius entlang Route)
 
 // ── Höhenprofil ──────────────────────────────────────────────────────────────
 const EP_SLOPE_SCALE = [
@@ -2168,6 +2173,10 @@ async function overpassFetch(q, timeoutMs = OVERPASS_TIMEOUT, opts = {}){
   // Lange Queries (around-Route) via POST — vermeidet URL-Längenlimit.
   const usePost = q.length > 600;
   const param   = '?data=' + encodeURIComponent(q);
+
+  // POST-Abfragen darf der Proxy länger bearbeiten (OVERPASS_TIMEOUT_POST) —
+  // der Browser darf deshalb nicht früher aufgeben als der Server selbst.
+  if (usePost) timeoutMs = Math.max(timeoutMs, OVERPASS_TIMEOUT_ROUTE);
 
   const ctls = OVERPASS_ENDPOINTS.map(() => new AbortController());
 
@@ -5001,26 +5010,35 @@ function toggleMobileSidebar() {
 }
 
 // ── Feature 4: POI-Suche ─────────────────────────────────────────────────────
+// `match` ordnet einen Treffer wieder seiner Kategorie zu — nötig, seit mehrere
+// Kategorien in EINER Overpass-Anfrage gebündelt werden (siehe _fetchPoiCats).
+// Es muss zur jeweiligen `query` passen: was die Query findet, muss match erkennen.
 const POI_CATS = [
   { id:'supermarket', icon:'🛒', label:'Supermarkt',
-    query: b => `node["shop"~"supermarket|grocery|convenience"](${b});` },
+    query: b => `node["shop"~"supermarket|grocery|convenience"](${b});`,
+    match: t => /^(supermarket|grocery|convenience)$/.test(t.shop || '') },
   { id:'bicycle',     icon:'🚲', label:'Fahrrad',
-    query: b => `(node["shop"="bicycle"](${b});node["amenity"="bicycle_repair_station"](${b}););` },
+    query: b => `(node["shop"="bicycle"](${b});node["amenity"="bicycle_repair_station"](${b}););`,
+    match: t => t.shop === 'bicycle' || t.amenity === 'bicycle_repair_station' },
   { id:'water',       icon:'💧', label:'Trinkwasser',
-    query: b => `(node["amenity"="drinking_water"](${b});node["amenity"="water_point"](${b}););` },
+    query: b => `(node["amenity"="drinking_water"](${b});node["amenity"="water_point"](${b}););`,
+    match: t => t.amenity === 'drinking_water' || t.amenity === 'water_point' },
   { id:'pharmacy',    icon:'💊', label:'Apotheke',
-    query: b => `node["amenity"="pharmacy"](${b});` },
+    query: b => `node["amenity"="pharmacy"](${b});`,
+    match: t => t.amenity === 'pharmacy' },
   { id:'bakery',      icon:'🥐', label:'Bäcker',
-    query: b => `node["shop"="bakery"](${b});` },
+    query: b => `node["shop"="bakery"](${b});`,
+    match: t => t.shop === 'bakery' },
   { id:'organic',     icon:'🌿', label:'Bio-Laden',
-    query: b => `node["shop"="organic"](${b});` },
+    query: b => `node["shop"="organic"](${b});`,
+    match: t => t.shop === 'organic' },
   { id:'campsite',    icon:'⛺', label:'Campingplätze',
-    outClause: 'out center tags;',
     query: b => `(node["tourism"="camp_site"](${b});way["tourism"="camp_site"](${b});node["tourism"="caravan_site"](${b}););`,
+    match: t => t.tourism === 'camp_site' || t.tourism === 'caravan_site',
     renderPopup: (t, lat, lon) => _campOsmPopupHtml(t, lat, lon) },
   { id:'shelter',     icon:'🛖', label:'Schutzhütten / Shelter',
-    outClause: 'out center tags;',
     query: b => `(node["tourism"~"alpine_hut|wilderness_hut"](${b});way["tourism"~"alpine_hut|wilderness_hut"](${b});node["amenity"="shelter"](${b});way["amenity"="shelter"](${b}););`,
+    match: t => /^(alpine_hut|wilderness_hut)$/.test(t.tourism || '') || t.amenity === 'shelter',
     renderPopup: (t, lat, lon) => _shelterPopupHtml(t, lat, lon) },
 ];
 const _poiLayers  = {};
@@ -5088,7 +5106,8 @@ function setPoiRouteKm(km) {
   _poiRouteKm = km;
   localStorage.setItem('poiRouteKm', km);
   _updatePoiKmBtns();
-  _activePois.forEach(id => { _resetPoiCat(id); _fetchPoiCat(id); });
+  _activePois.forEach(id => _resetPoiCat(id));
+  _fetchPoiCats([..._activePois]);
 }
 
 function setPoiMode(mode) {
@@ -5097,7 +5116,8 @@ function setPoiMode(mode) {
   document.getElementById('poiMapControls').style.display   = mode === 'map'   ? '' : 'none';
   document.getElementById('poiRouteControls').style.display = mode === 'route' ? '' : 'none';
   _updatePoiKmBtns();
-  _activePois.forEach(id => { _resetPoiCat(id); _fetchPoiCat(id); });
+  _activePois.forEach(id => _resetPoiCat(id));
+  _fetchPoiCats([..._activePois]);
 }
 
 function _initPoiSettings() {
@@ -5127,13 +5147,14 @@ function togglePoiCat(id) {
 
 function _schedulePoiRefresh(delay = 350) {
   clearTimeout(_poiTimer);
-  _poiTimer = setTimeout(() => { _activePois.forEach(id => _fetchPoiCat(id)); }, delay);
+  // EIN gebündelter Aufruf für alle aktiven Kategorien (siehe _fetchPoiCats),
+  // nicht mehr eine Anfrage je Kategorie.
+  _poiTimer = setTimeout(() => _fetchPoiCats([..._activePois]), delay);
 }
 
-// Laufende POI-Abfrage je Kategorie. Beim Verschieben/Zoomen wird die vorherige
-// Abfrage derselben Kategorie abgebrochen — sonst stapeln sich die Anfragen
-// (jedes Pan startete eine weitere), die OSM-Server drosseln daraufhin und
-// alles wird spürbar langsam ("erst schnell, dann zäh").
+// Abbruch-Signal der laufenden POI-Abfrage. Ein Stapeln von Anfragen verhindert
+// inzwischen die Warteschlange in _fetchPoiCats (nicht mehr der Abbruch bei
+// jedem Pan) — dieses Signal bleibt für den „Abbrechen"-Knopf am OSM-Hinweis.
 const _poiInflight = {};
 
 function _poiNewSignal(id) {
@@ -5189,50 +5210,130 @@ function _renderPoiMarkers(id, cat, elements, borderColor) {
   });
 }
 
-async function _fetchPoiCat(id) {
-  const cat = POI_CATS.find(c => c.id === id);
-  if (!cat || !leafletMap) return;
-  if (_poiMode === 'route') return _fetchPoiCatRoute(id, cat);
+// ── POI-Abfragen bündeln ─────────────────────────────────────────────────────
+// Vorbild: die Bibliothek `overpass-frontend`, die brouter-web benutzt. Sie
+// stellt alle offenen Abfragen in eine Warteschlange und schickt sie GEBÜNDELT
+// als eine einzige Anfrage los. Wir hatten dagegen eine Anfrage JE KATEGORIE,
+// alle gleichzeitig — die öffentlichen Overpass-Server erlauben aber nur zwei
+// gleichzeitige Abfragen je IP. Alles darüber stellten sie ohne Antwort in ihre
+// eigene Warteschlange, bei uns lief es in die Zeitüberschreitung. Acht aktive
+// Kategorien ergeben jetzt zwei Anfragen statt acht.
+const POI_BUNDLE_MAX = 4;   // Kategorien je Anfrage
 
-  // ── Karten-Modus ─────────────────────────────────────────────────────────
-  const _visKm = Math.round(_mapVisibleKm());
-  if (_visKm > _poiMaxKm) {
-    _poiLayers[id]?.clearLayers();
-    _overpassHintShow(`📍 Reinzoomen — zeigt ${_visKm} km, Schwelle ${_poiMaxKm} km`, 2500);
+/** Gemeinsame Suchregion + Cache-Schlüssel für den aktuellen Modus/Ausschnitt.
+ *  Gibt stattdessen {hint} zurück, wenn gerade nichts abzufragen ist. */
+function _poiRegion() {
+  const g = 0.05;
+  const b = leafletMap.getBounds();
+  if (_poiMode === 'route') {
+    if (!ROUTE_PTS || ROUTE_PTS.length < 2)
+      return { hint: '📍 Keine Route geladen — GPX importieren', hintMs: 2500 };
+    const visPts = _visibleRoutePts();
+    if (visPts.length < 2)
+      return { hint: '📍 Kein Streckenabschnitt im Kartenausschnitt — hereinzoomen', hintMs: 2000 };
+    // Sichtbare Punkte auf max. 60 reduzieren — Query bleibt klein
+    const step = Math.max(1, Math.floor(visPts.length / 60));
+    const pts  = visPts.filter((_, i) => i % step === 0);
+    const r = v => (Math.floor(v/g)*g).toFixed(3);
+    return {
+      region:   `around:${_poiRouteKm * 1000},${pts.map(p => `${p[0]},${p[1]}`).join(',')}`,
+      ckey:     `route|${_poiRouteKm}|${r(b.getSouth())},${r(b.getWest())},${r(b.getNorth())},${r(b.getEast())}`,
+      timeout:  OVERPASS_TIMEOUT_ROUTE,
+      qTimeout: 60,
+      modeLabel:'Strecke',
+      color:    'var(--green,#28c76a)',
+      empty:    c => `${c.icon} ${c.label}: keine innerhalb ${_poiRouteKm} km der Strecke`,
+    };
+  }
+  const visKm = Math.round(_mapVisibleKm());
+  if (visKm > _poiMaxKm)
+    return { hint: `📍 Reinzoomen — zeigt ${visKm} km, Schwelle ${_poiMaxKm} km`, hintMs: 2500 };
+  _overpassHintHide();
+  const bbox = [
+    (Math.floor(b.getSouth()/g)*g).toFixed(4), (Math.floor(b.getWest()/g)*g).toFixed(4),
+    (Math.ceil( b.getNorth()/g)*g).toFixed(4), (Math.ceil( b.getEast()/g)*g).toFixed(4),
+  ].join(',');
+  return {
+    region: bbox, ckey: `map|${bbox}`, timeout: OVERPASS_TIMEOUT, qTimeout: 25,
+    modeLabel: 'Karte', color: 'rgba(255,255,255,.55)',
+    empty: c => `${c.icon} ${c.label}: keine im aktuellen Bereich`,
+  };
+}
+
+async function _fetchPoiCat(id) { return _fetchPoiCats([id]); }
+
+// Immer nur EINE POI-Abfrage unterwegs — wie `requestIsActive` in
+// overpass-frontend. Kommt während einer laufenden Abfrage eine neue dazu (Karte
+// weiter verschoben), wird sie nur gemerkt und danach EINMAL nachgeholt; sie
+// benutzt dann den dann aktuellen Kartenausschnitt.
+// Früher wurde die laufende Abfrage stattdessen abgebrochen. Das half nichts:
+// der Python-Handler bemerkt den Abbruch nicht, rechnet weiter und belegt bis
+// zum Ende einen der zwei Slots, die Overpass je IP erlaubt — die neue Abfrage
+// lief dadurch in Drosselung/Zeitüberschreitung, obwohl die alte fast fertig war.
+let _poiBusy    = false;
+let _poiPending = null;
+
+async function _fetchPoiCats(ids) {
+  if (_poiBusy) { _poiPending = ids; return; }
+  _poiBusy = true;
+  try {
+    await _fetchPoiCatsNow(ids);
+  } finally {
+    _poiBusy = false;
+    const next = _poiPending;
+    _poiPending = null;
+    if (next) _fetchPoiCats(next);
+  }
+}
+
+async function _fetchPoiCatsNow(ids) {
+  const cats = POI_CATS.filter(c => ids.includes(c.id));
+  if (!cats.length || !leafletMap) return;
+
+  const reg = _poiRegion();
+  if (reg.hint) {
+    cats.forEach(c => _poiLayers[c.id]?.clearLayers());
+    _overpassHintShow(reg.hint, reg.hintMs);
     return;
   }
-  _overpassHintHide();
 
-  const b = leafletMap.getBounds();
-  const g = 0.05;
-  const s = (Math.floor(b.getSouth()/g)*g).toFixed(4);
-  const w = (Math.floor(b.getWest() /g)*g).toFixed(4);
-  const n = (Math.ceil( b.getNorth()/g)*g).toFixed(4);
-  const e = (Math.ceil( b.getEast() /g)*g).toFixed(4);
-  const bbox = `${s},${w},${n},${e}`;
-  const ckey = `map|${id}|${bbox}`;
-  const outClause = cat.outClause || 'out body;';
+  // Schon geladene Kategorien sofort zeichnen — angefragt wird nur der Rest
+  // (dasselbe Prinzip wie die lokale Objektdatenbank von overpass-frontend).
+  const missing = [];
+  for (const c of cats) {
+    const cached = _poiCache[`${reg.ckey}|${c.id}`];
+    if (cached !== undefined) _renderPoiMarkers(c.id, c, cached, reg.color);
+    else missing.push(c);
+  }
 
-  try {
-    let elements = _poiCache[ckey];
-    if (!elements) {
-      const q = `[out:json][timeout:20];${cat.query(bbox)}${outClause}`;
-      const data = await overpassFetch(q, OVERPASS_TIMEOUT,
-        { signal: _poiNewSignal(id), label: `${cat.icon} ${cat.label} (Karte)` });
-      elements = data.elements || [];
-      _poiCache[ckey] = elements;
+  for (let i = 0; i < missing.length; i += POI_BUNDLE_MAX) {
+    const group = missing.slice(i, i + POI_BUNDLE_MAX);
+    // `out center tags` für alle: liefert Nodes ihre lat/lon und Ways einen
+    // center-Punkt — deshalb reicht EIN out-Ausdruck für gemischte Kategorien.
+    const q = `[out:json][timeout:${reg.qTimeout}];(${group.map(c => c.query(reg.region)).join('')});out center tags;`;
+    const label = group.length === 1
+      ? `${group[0].icon} ${group[0].label} (${reg.modeLabel})`
+      : `${group.map(c => c.icon).join('')} ${group.length} Kategorien (${reg.modeLabel})`;
+    try {
+      const data = await overpassFetch(q, reg.timeout,
+        { signal: _poiNewSignal('bundle'), label });
+      const els = data.elements || [];
+      group.forEach(c => {
+        const mine = els.filter(el => c.match(el.tags || {}));
+        _poiCache[`${reg.ckey}|${c.id}`] = mine;
+        _renderPoiMarkers(c.id, c, mine, reg.color);
+        if (!mine.length) _overpassHintShow(reg.empty(c), 3500);
+      });
       const keys = Object.keys(_poiCache);
-      if (keys.length > 120) delete _poiCache[keys[0]];
+      while (keys.length > 200) delete _poiCache[keys.shift()];
+    } catch(err) {
+      if (err?.name === 'AbortError') return;   // durch neueres Pan/Zoom überholt
+      console.warn('POI fetch:', err);
+      _overpassHintShow(err?._throttled
+        ? '⏳ OSM-Server gerade überlastet — in ein paar Minuten erneut versuchen'
+        : '⚠ OSM nicht erreichbar — Karte läuft, nur die POI-Suche ist betroffen', 5000);
+      return;
     }
-    _renderPoiMarkers(id, cat, elements, 'rgba(255,255,255,.55)');
-    if (elements.length === 0)
-      _overpassHintShow(`${cat.icon} ${cat.label}: keine im aktuellen Bereich`, 3500);
-  } catch(err) {
-    if (err?.name === 'AbortError') return;   // durch neueres Pan/Zoom überholt
-    console.warn('POI fetch:', err);
-    _overpassHintShow(err?._throttled
-      ? `⏳ ${cat.icon} ${cat.label}: OSM-Server gerade überlastet — in ein paar Minuten erneut versuchen`
-      : `⚠ ${cat.icon} ${cat.label}: OSM nicht erreichbar — Karte läuft, später erneut versuchen`, 5000);
   }
 }
 
@@ -5241,58 +5342,6 @@ function _visibleRoutePts() {
   if (!leafletMap || !ROUTE_PTS || ROUTE_PTS.length < 2) return [];
   const b = leafletMap.getBounds().pad(0.1); // 10% Puffer damit Randpunkte nicht fehlen
   return ROUTE_PTS.filter(p => b.contains([p[0], p[1]]));
-}
-
-async function _fetchPoiCatRoute(id, cat) {
-  // ── Strecken-Modus: nur sichtbarer Routenabschnitt ───────────────────────
-  if (!ROUTE_PTS || ROUTE_PTS.length < 2) {
-    _poiLayers[id]?.clearLayers();
-    _overpassHintShow('📍 Keine Route geladen — GPX importieren', 2500);
-    return;
-  }
-
-  const visPts = _visibleRoutePts();
-  if (visPts.length < 2) {
-    _poiLayers[id]?.clearLayers();
-    _overpassHintShow('📍 Kein Streckenabschnitt im Kartenausschnitt — hereinzoomen', 2000);
-    return;
-  }
-
-  // Cache-Key mit gerundeter Bbox → gleiche Ansicht = gleiche Ergebnisse
-  const b = leafletMap.getBounds();
-  const g = 0.05;
-  const s = (Math.floor(b.getSouth()/g)*g).toFixed(3);
-  const w = (Math.floor(b.getWest() /g)*g).toFixed(3);
-  const n = (Math.ceil( b.getNorth()/g)*g).toFixed(3);
-  const e = (Math.ceil( b.getEast() /g)*g).toFixed(3);
-  const ckey = `route|${id}|${_poiRouteKm}|${s},${w},${n},${e}`;
-  const outClause = cat.outClause || 'out body;';
-
-  try {
-    let elements = _poiCache[ckey];
-    if (elements === undefined) {
-      // Sichtbare Punkte auf max. 60 reduzieren — Query bleibt klein
-      const step   = Math.max(1, Math.floor(visPts.length / 60));
-      const pts    = visPts.filter((_, i) => i % step === 0);
-      const arnd   = `around:${_poiRouteKm * 1000},${pts.map(p => `${p[0]},${p[1]}`).join(',')}`;
-      const q = `[out:json][timeout:25];${cat.query(arnd)}${outClause}`;
-      const data = await overpassFetch(q, OVERPASS_TIMEOUT, // normale 30s genügen
-        { signal: _poiNewSignal(id), label: `${cat.icon} ${cat.label} (Strecke)` });
-      elements = data?.elements || [];
-      _poiCache[ckey] = elements;
-      const keys = Object.keys(_poiCache);
-      if (keys.length > 150) delete _poiCache[keys[0]];
-    }
-    _renderPoiMarkers(id, cat, elements, 'var(--green,#28c76a)');
-    if (elements.length === 0)
-      _overpassHintShow(`${cat.icon} ${cat.label}: keine innerhalb ${_poiRouteKm} km der Strecke`, 3500);
-  } catch(err) {
-    if (err?.name === 'AbortError') return;   // durch neueres Pan/Zoom überholt
-    console.warn('POI route fetch:', err);
-    _overpassHintShow(err?._throttled
-      ? `⏳ ${cat.icon} ${cat.label}: OSM-Server gerade überlastet — in ein paar Minuten erneut versuchen`
-      : '⚠ Strecken-POI-Abfrage fehlgeschlagen', 4000);
-  }
 }
 
 function _shelterPopupHtml(t, lat, lon) {

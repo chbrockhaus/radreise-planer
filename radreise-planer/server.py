@@ -10,6 +10,7 @@ Radreise Planer – HTTP-Server für Docker / Home Assistant Add-on.
 """
 
 import concurrent.futures
+import gzip
 import http.server
 import json
 import os
@@ -47,10 +48,9 @@ TOURS_DIR              = os.path.join(DATA_DIR, 'tours')
 SEGMENTS_REFRESHED_FILE = os.path.join(DATA_DIR, 'segments_refreshed.json')
 
 BROUTER_PORT    = 17777
-# Alle Endpoints werden PARALLEL angefragt (siehe _overpass_race), daher darf das
-# Timeout pro Endpoint großzügig sein: ein langsamer Endpoint blockiert die
-# schnellen nicht mehr, dient aber weiterhin als Reserve wenn die schnellen ausfallen.
-OVERPASS_TIMEOUT      = 25   # Sekunden pro Endpoint (GET)
+# Timeout pro Endpoint. Die Endpoints werden GESTAFFELT angefragt (siehe
+# _overpass_race), ein langsamer blockiert die schnellen also nicht.
+OVERPASS_TIMEOUT      = 20   # Sekunden pro Endpoint (GET)
 OVERPASS_TIMEOUT_POST = 40   # POST (around-Route) darf länger dauern
 APP_DIR         = os.path.dirname(os.path.abspath(__file__))
 TILE_CACHE_DIR  = os.path.join(DATA_DIR, 'tile_cache')
@@ -187,32 +187,131 @@ def delete_tour(tid):
         return True
     return False
 
-# ── Overpass: alle Endpoints parallel anfragen ────────────────────────────────
-# Reihenfolge nur noch dokumentarisch (parallel) — gemessene Antwortzeiten 2026-08:
-# private.coffee ~2s, kumi.systems ~3s, overpass-api.de ~23s.
-# lz4.overpass-api.de wurde entfernt: lief jedes Mal ins volle Timeout (Verbindung
-# wird nicht angenommen) und belegte damit dauerhaft einen Poolplatz pro Anfrage.
+# ── Overpass: gestaffelt statt alle gleichzeitig ──────────────────────────────
+# Startreihenfolge wird zur Laufzeit nach gemessener Antwortzeit sortiert
+# (siehe _ep_order) — diese Liste gibt nur die Kandidaten vor.
+# gall/lambert sind die beiden ECHTEN Server hinter overpass-api.de. Sie stehen
+# hier extra drin, weil der Lastverteiler overpass-api.de zeitweise auf einen
+# überlasteten Knoten schickt (gemessen 2026-08: overpass-api.de HTTP 504, während
+# lambert dieselbe Abfrage in 0,53 s beantwortete). Doppelt gezählt wird dadurch
+# nichts — die Slots hängen an der IP, nicht am Namen (siehe _ep_key).
 OVERPASS_ENDPOINTS = [
-    'https://overpass.private.coffee/api/interpreter',
-    'https://overpass.kumi.systems/api/interpreter',
-    'https://overpass-api.de/api/interpreter',
+    'https://lambert.openstreetmap.de/api/interpreter',   # OSM-DE Server B
+    'https://gall.openstreetmap.de/api/interpreter',      # OSM-DE Server A
+    'https://overpass.private.coffee/api/interpreter',    # eigene Maschine …
+    'https://overpass.kumi.systems/api/interpreter',      # … dieselbe wie private.coffee
+    'https://overpass-api.de/api/interpreter',            # Lastverteiler auf A/B
 ]
 
-# Großzügig dimensioniert: nach einem Rennen laufen die unterlegenen Anfragen noch
-# bis zu OVERPASS_TIMEOUT weiter (Threads lassen sich in Python nicht abbrechen) und
-# belegen so lange einen Platz. Ein zu kleiner Pool führte dazu, dass neue Anfragen
-# hinter diesen Nachzüglern warten mussten und erst nach ~27 s ins Leere liefen.
-_OVERPASS_POOL = concurrent.futures.ThreadPoolExecutor(
-    max_workers=64, thread_name_prefix='overpass')
+# Mehr als drei Versuche pro Abfrage bringen nichts und würden nur das Zeitbudget
+# aufblähen (jeder weitere Endpoint verlängert die Frist um OVERPASS_STAGGER).
+OVERPASS_MAX_TRIES = 3
 
-# Die öffentlichen Server melden unter /api/status "Rate limit: 2" — mehr als zwei
-# gleichzeitige Abfragen je IP quittieren sie mit 429. Mehrere POI-Kategorien
-# gleichzeitig zu laden lief also zwangsläufig in die Drosselung. Deshalb hier
-# hart auf zwei gleichzeitige Abfragen begrenzen: die dritte wartet kurz, statt
-# abgelehnt zu werden.
+# WARUM NICHT MEHR ALLE ENDPOINTS GLEICHZEITIG (bis v1.9.8):
+# Sockets/Threads lassen sich in Python nicht abbrechen — nach dem Gewinner eines
+# Rennens liefen die beiden Verlierer bis zu OVERPASS_TIMEOUT weiter und belegten
+# so lange je einen der nur ZWEI Slots, die Overpass pro IP erlaubt. Bei mehreren
+# POI-Abfragen kurz hintereinander stapelten sich diese Nachzügler, bis alle drei
+# Server nur noch in die Warteschlange stellten → Zeitüberschreitung bzw. 504
+# ("overpass-api.de: HTTP 504; private.coffee: Zeitüberschreitung; …").
+# Jetzt: erst den schnellsten Endpoint fragen, einen zweiten NUR wenn nach
+# OVERPASS_STAGGER Sekunden noch keine Antwort da ist. Im Normalfall entsteht so
+# eine einzige Anfrage statt drei — ein Drittel der Last, keine Nachzügler.
+OVERPASS_STAGGER  = 2.5   # Sekunden bis zusätzlich der nächste Endpoint startet
+OVERPASS_HOST_MAX = 2     # gleichzeitige Anfragen je Endpoint ("Rate limit: 2")
+OVERPASS_COOLDOWN = 90    # Sekunden, die ein Endpoint nach einem Fehler hintenansteht
+
+_OVERPASS_POOL = concurrent.futures.ThreadPoolExecutor(
+    max_workers=32, thread_name_prefix='overpass')
+
+# Slots werden pro MASCHINE (IP) gezählt, nicht pro Hostname:
+# overpass.private.coffee und overpass.kumi.systems zeigen auf denselben Rechner
+# (193.219.97.30 / 2a0d:f302:126:78ea::1, geprüft 2026-08). Nach Hostnamen gezählt
+# hätten wir ihm doppelt so viele gleichzeitige Anfragen geschickt wie erlaubt —
+# er nimmt die Verbindung dann zwar an, lässt sie aber ohne Antwort stehen, bis
+# unser Timeout zuschlägt (Fehlerbild "Zeitüberschreitung" trotz freier Leitung).
+EP_IP_TTL      = 600        # Sekunden, die eine aufgelöste IP wiederverwendet wird
+_ep_ip_cache   = {}         # host -> (zeitstempel, ip)
+_ep_avg        = {}         # endpoint -> geglättete Antwortzeit
+_slots         = {}         # ip -> {'inflight': n, 'cool_until': t}
+_ep_lock       = threading.Lock()
+
+
+def _ep_key(ep):
+    """Slot-Schlüssel eines Endpoints: seine IP (siehe Kommentar oben)."""
+    host = ep.split('/')[2]
+    now  = time.time()
+    with _ep_lock:
+        hit = _ep_ip_cache.get(host)
+    if hit and now - hit[0] < EP_IP_TTL:
+        return hit[1]
+    try:   # außerhalb des Locks — getaddrinfo kann blockieren
+        key = socket.getaddrinfo(host, 443, type=socket.SOCK_STREAM)[0][4][0]
+    except Exception:
+        key = host
+    with _ep_lock:
+        _ep_ip_cache[host] = (now, key)
+    return key
+
+
+def _slot(key):
+    return _slots.setdefault(key, {'inflight': 0, 'cool_until': 0.0})
+
+
+def _ep_order():
+    """Endpoints nach Erfolgsaussicht: nicht gesperrt, wenig belegt, schnell."""
+    keys = {ep: _ep_key(ep) for ep in OVERPASS_ENDPOINTS}   # ggf. DNS, ohne Lock
+    now  = time.time()
+    with _ep_lock:
+        return sorted(OVERPASS_ENDPOINTS, key=lambda ep: (
+            _slot(keys[ep])['cool_until'] > now,
+            _slot(keys[ep])['inflight'],
+            _ep_avg.get(ep) if _ep_avg.get(ep) is not None else 5.0,
+        ))
+
+
+def _ep_reserve(ep):
+    """Belegt einen Slot der Maschine; False wenn schon OVERPASS_HOST_MAX laufen."""
+    key = _ep_key(ep)
+    with _ep_lock:
+        st = _slot(key)
+        if st['inflight'] >= OVERPASS_HOST_MAX:
+            return False
+        st['inflight'] += 1
+        return True
+
+
+def _ep_release(ep, secs=None):
+    """Gibt den Slot frei. secs=None bedeutet Fehler → Maschine kurz sperren."""
+    key = _ep_key(ep)
+    with _ep_lock:
+        st = _slot(key)
+        st['inflight'] = max(0, st['inflight'] - 1)
+        if secs is None:
+            st['cool_until'] = time.time() + OVERPASS_COOLDOWN
+        else:
+            prev = _ep_avg.get(ep)
+            _ep_avg[ep] = secs if prev is None else 0.7 * prev + 0.3 * secs
+            st['cool_until'] = 0.0
+
+# Vorbild ist `requestIsActive` aus der Bibliothek overpass-frontend, die
+# brouter-web benutzt: dort läuft nie mehr als eine Overpass-Anfrage, alles
+# andere wartet in einer Warteschlange. Hier sind es ZWEI Warteplätze, nicht
+# einer — denn bricht der Browser eine Abfrage ab (Karte verschoben), merkt der
+# Python-Handler das nicht: er rechnet die verwaiste Anfrage zu Ende und hielte
+# mit nur einem Platz die Folgeanfrage bis zu OVERPASS_QUEUE_WAIT auf (gemessen:
+# genau 15 s Wartezeit, dann Fehler). Das Limit der OSM-Server wird davon nicht
+# berührt — das hängt an OVERPASS_HOST_MAX je Maschine, nicht an dieser Zahl.
 OVERPASS_MAX_PARALLEL = 2
-OVERPASS_QUEUE_WAIT   = 20   # Sekunden, die eine wartende Abfrage max. ansteht
+OVERPASS_QUEUE_WAIT   = 15   # Sekunden, die eine wartende Abfrage max. ansteht
 _overpass_gate = threading.Semaphore(OVERPASS_MAX_PARALLEL)
+
+# Drosselung ist kein Ausfall: overpass-frontend wartet bei 429 exponentiell
+# (500 ms, ×3 je Versuch, max. 3 Versuche) statt aufzugeben. Genauso hier — aber
+# nur bei SCHNELLEN Fehlern (429/504); nach einer Zeitüberschreitung ist das
+# Zeitbudget ohnehin aufgebraucht.
+OVERPASS_RETRIES = 2         # zusätzliche Versuche nach Drosselung
+OVERPASS_BACKOFF = 0.5       # Sekunden, verdreifacht sich je Versuch
 
 
 # Kurzzeit-Cache für identische Abfragen (POI-Kategorie aus-/wieder einschalten,
@@ -252,13 +351,24 @@ def _overpass_fetch_one(ep, qs, body, timeout):
     Endpoints nicht an — die Anfrage lief jedes Mal ins Timeout, wodurch die
     Strecken-POI-Suche gar nicht funktionierte.
     """
-    headers = {'User-Agent': 'RadreisePlaner/1.0', 'Accept': 'application/json'}
-    if body is None:
-        req = urllib.request.Request(ep + qs, headers=headers)
-    else:
-        req = urllib.request.Request(ep, data=body, headers=headers, method='POST')
-    with urllib.request.urlopen(req, timeout=timeout) as resp:
-        return resp.read()
+    headers = {'User-Agent': 'RadreisePlaner/1.0', 'Accept': 'application/json',
+               'Accept-Encoding': 'gzip'}   # POI-Antworten sind groß, gzip spart Zeit
+    t0, ok = time.time(), False
+    try:
+        if body is None:
+            req = urllib.request.Request(ep + qs, headers=headers)
+        else:
+            req = urllib.request.Request(ep, data=body, headers=headers, method='POST')
+        with urllib.request.urlopen(req, timeout=timeout) as resp:
+            raw = resp.read()
+            if (resp.headers.get('Content-Encoding') or '').lower() == 'gzip':
+                raw = gzip.decompress(raw)
+        ok = True
+        return raw
+    finally:
+        # Slot erst hier freigeben: ein Nachzügler hält seine Verbindung wirklich
+        # bis zum Ende offen und belegt so lange auch beim Server einen Platz.
+        _ep_release(ep, time.time() - t0 if ok else None)
 
 
 def _overpass_raw_query(body: bytes) -> bytes:
@@ -271,12 +381,14 @@ def _overpass_raw_query(body: bytes) -> bytes:
 
 
 def _overpass_race(qs='', body=None, timeout=OVERPASS_TIMEOUT):
-    """Fragt ALLE Endpoints gleichzeitig an — die erste gültige Antwort gewinnt.
+    """Fragt den aussichtsreichsten Endpoint an und schaltet nur bei Bedarf nach.
 
-    Vorher wurden die Endpoints sequenziell durchprobiert. Da der erste
-    (overpass-api.de) regelmäßig überlastet ist und lz4 zeitweise gar nicht
-    erreichbar, summierten sich die Timeouts auf 15–30 s, obwohl
-    private.coffee/kumi.systems in 2–3 s antworten.
+    Ein zweiter (bzw. dritter) Endpoint wird erst gestartet, wenn nach
+    OVERPASS_STAGGER Sekunden noch keine Antwort da ist — die erste gültige
+    Antwort gewinnt. Dadurch entsteht im Normalfall EINE Anfrage statt drei; die
+    früher übliche Wolke aus nicht abbrechbaren Verlierer-Anfragen (die die zwei
+    erlaubten Slots je Server dauerhaft belegte) gibt es nicht mehr.
+    Wird alles gedrosselt, wird nach kurzer Pause wiederholt (siehe unten).
     Identische Abfragen kommen aus dem Cache (siehe _overpass_cache_get).
     Rückgabe: (daten_bytes, None) oder (None, fehlertext).
     """
@@ -285,9 +397,9 @@ def _overpass_race(qs='', body=None, timeout=OVERPASS_TIMEOUT):
     if cached is not None:
         return cached, 'CACHE'   # Sonderfall: kein Fehler, sondern Cache-Treffer
 
-    # Anstellen statt losstürmen (siehe OVERPASS_MAX_PARALLEL): mehrere POI-
-    # Kategorien gleichzeitig überschritten sonst das Limit gleichzeitiger
-    # Abfragen je IP und wurden allesamt mit 429 abgewiesen.
+    # Anstellen statt losstürmen (siehe OVERPASS_MAX_PARALLEL): mehrere Abfragen
+    # gleichzeitig überschritten sonst das Limit gleichzeitiger Abfragen je IP
+    # und wurden allesamt mit 429 abgewiesen.
     if not _overpass_gate.acquire(timeout=OVERPASS_QUEUE_WAIT):
         return None, f'zu viele gleichzeitige Abfragen (> {OVERPASS_QUEUE_WAIT}s gewartet)'
     try:
@@ -297,30 +409,80 @@ def _overpass_race(qs='', body=None, timeout=OVERPASS_TIMEOUT):
         if cached is not None:
             return cached, 'CACHE'
 
-        futures = {_OVERPASS_POOL.submit(_overpass_fetch_one, ep, qs, body, timeout): ep
-                   for ep in OVERPASS_ENDPOINTS}
+        gesamtfrist = time.time() + timeout + 8   # Obergrenze inkl. Wiederholungen
+
+        def versuch():
+            """Ein Durchgang über die Endpoints. Rückgabe: (daten|None, fehlerliste)."""
+            pending  = _ep_order()[:OVERPASS_MAX_TRIES]   # noch nicht gestartete
+            futures  = {}                                 # future -> endpoint
+            errs     = []
+            frist    = min(gesamtfrist,
+                           time.time() + timeout + OVERPASS_STAGGER * (len(pending) - 1))
+
+            def start_next():
+                """Startet den ersten Endpoint, bei dem noch ein Slot frei ist."""
+                for i, ep in enumerate(pending):
+                    if not _ep_reserve(ep):
+                        continue           # alle Slots dieser Maschine belegt
+                    pending.pop(i)
+                    try:
+                        futures[_OVERPASS_POOL.submit(
+                            _overpass_fetch_one, ep, qs, body, timeout)] = ep
+                    except Exception:
+                        _ep_release(ep, None)
+                        raise
+                    return True
+                return False
+
+            while time.time() < frist:
+                start_next()
+                if not futures:
+                    if not pending:
+                        break
+                    time.sleep(0.25)       # alle Maschinen ausgelastet — kurz warten
+                    continue
+                rest = frist - time.time()
+                if rest <= 0:
+                    break
+                done, _ = concurrent.futures.wait(
+                    futures,
+                    timeout=min(OVERPASS_STAGGER, rest) if pending else rest,
+                    return_when=concurrent.futures.FIRST_COMPLETED)
+                for fut in done:
+                    host = futures.pop(fut).split('/')[2]
+                    try:
+                        data = fut.result()
+                        if data:
+                            return data, errs
+                        errs.append(f'{host}: leere Antwort')
+                    except urllib.error.HTTPError as e:
+                        # 429 = Drosselung wegen zu vieler Abfragen — für den Nutzer klar
+                        # unterscheidbar von "Server weg", denn hier hilft nur abwarten.
+                        errs.append(f'{host}: {"Drosselung (429)" if e.code == 429 else f"HTTP {e.code}"}')
+                    except Exception as e:
+                        errs.append(f'{host}: {"Zeitüberschreitung" if isinstance(e, (TimeoutError, socket.timeout)) else type(e).__name__}')
+                if not futures and not pending:
+                    break
+            if futures and not errs:
+                errs.append('Gesamt-Zeitüberschreitung')
+            return None, errs
+
         errs = []
-        try:
-            for fut in concurrent.futures.as_completed(futures, timeout=timeout + 2):
-                host = futures[fut].split('/')[2]
-                try:
-                    data = fut.result()
-                    if data:
-                        _overpass_cache_put(ckey, data)
-                        return data, None
-                except urllib.error.HTTPError as e:
-                    # 429 = Drosselung wegen zu vieler Abfragen — für den Nutzer klar
-                    # unterscheidbar von "Server weg", denn hier hilft nur abwarten.
-                    errs.append(f'{host}: {"Drosselung (429)" if e.code == 429 else f"HTTP {e.code}"}')
-                except Exception as e:
-                    errs.append(f'{host}: {"Zeitüberschreitung" if isinstance(e, (TimeoutError, socket.timeout)) else type(e).__name__}')
-        except concurrent.futures.TimeoutError:
-            errs.append('Gesamt-Zeitüberschreitung')
-        finally:
-            # Noch nicht gestartete abbrechen; laufende beenden sich per eigenem Timeout.
-            for fut in futures:
-                fut.cancel()
-        return None, '; '.join(errs) or 'keine Antwort'
+        for n in range(OVERPASS_RETRIES + 1):
+            data, errs = versuch()
+            if data is not None:
+                _overpass_cache_put(ckey, data)
+                return data, None
+            # Nur bei Drosselung/Überlastung wiederholen: die kommen schnell zurück,
+            # eine Zeitüberschreitung hat das Budget dagegen schon aufgebraucht.
+            gedrosselt = bool(errs) and all(('429' in e or '504' in e or '503' in e)
+                                            for e in errs)
+            pause = OVERPASS_BACKOFF * (3 ** n)
+            if (not gedrosselt or n == OVERPASS_RETRIES
+                    or time.time() + pause + 5 > gesamtfrist):
+                break
+            time.sleep(pause)
+        return None, '; '.join(errs) or 'alle Endpoints ausgelastet'
     finally:
         _overpass_gate.release()
 
