@@ -332,6 +332,7 @@ _overpass_cache_lock = threading.Lock()
 
 
 def _overpass_cache_get(key):
+    """Gibt (daten, antwortender_host) zurück oder None."""
     with _overpass_cache_lock:
         hit = _overpass_cache.get(key)
         if not hit:
@@ -339,12 +340,12 @@ def _overpass_cache_get(key):
         if time.time() - hit[0] >= OVERPASS_CACHE_TTL:
             del _overpass_cache[key]
             return None
-        return hit[1]
+        return hit[1], hit[2]
 
 
-def _overpass_cache_put(key, data):
+def _overpass_cache_put(key, data, host=''):
     with _overpass_cache_lock:
-        _overpass_cache[key] = (time.time(), data)
+        _overpass_cache[key] = (time.time(), data, host)
         if len(_overpass_cache) > OVERPASS_CACHE_MAX:
             oldest = min(_overpass_cache, key=lambda k: _overpass_cache[k][0])
             del _overpass_cache[oldest]
@@ -378,6 +379,23 @@ def _overpass_fetch_one(ep, qs, body, timeout):
         _ep_release(ep, time.time() - t0 if ok else None)
 
 
+def _overpass_state():
+    """Zustand je Endpoint für das OSM-Protokollfenster im Frontend."""
+    now = time.time()
+    out = []
+    for ep in OVERPASS_ENDPOINTS:
+        st  = _slot(_ep_key(ep))
+        avg = _ep_avg.get(ep)
+        out.append({
+            'host':     ep.split('/')[2],
+            'avg_ms':   round(avg * 1000) if avg is not None else None,
+            'inflight': st['inflight'],
+            'cool_s':   max(0, round(st['cool_until'] - now)),
+            'fails':    st.get('fails', 0),
+        })
+    return out
+
+
 def _overpass_raw_query(body: bytes) -> bytes:
     """Holt den rohen Query aus dem Request-Body des Frontends.
     Das Frontend schickt 'data=<urlencodiert>'; ältere/direkte Aufrufer den Query pur."""
@@ -397,29 +415,31 @@ def _overpass_race(qs='', body=None, timeout=OVERPASS_TIMEOUT):
     erlaubten Slots je Server dauerhaft belegte) gibt es nicht mehr.
     Wird alles gedrosselt, wird nach kurzer Pause wiederholt (siehe unten).
     Identische Abfragen kommen aus dem Cache (siehe _overpass_cache_get).
-    Rückgabe: (daten_bytes, None) oder (None, fehlertext).
+    Rückgabe: (daten|None, fehlertext|None, {'host': …, 'tries': …}).
     """
     ckey = body if body is not None else qs
     cached = _overpass_cache_get(ckey)
     if cached is not None:
-        return cached, 'CACHE'   # Sonderfall: kein Fehler, sondern Cache-Treffer
+        # Sonderfall: kein Fehler, sondern Cache-Treffer
+        return cached[0], 'CACHE', {'host': cached[1], 'tries': 0}
 
     # Anstellen statt losstürmen (siehe OVERPASS_MAX_PARALLEL): mehrere Abfragen
     # gleichzeitig überschritten sonst das Limit gleichzeitiger Abfragen je IP
     # und wurden allesamt mit 429 abgewiesen.
     if not _overpass_gate.acquire(timeout=OVERPASS_QUEUE_WAIT):
-        return None, f'zu viele gleichzeitige Abfragen (> {OVERPASS_QUEUE_WAIT}s gewartet)'
+        return (None, f'zu viele gleichzeitige Abfragen (> {OVERPASS_QUEUE_WAIT}s gewartet)',
+                {'host': '', 'tries': 0})
     try:
         # Während des Wartens kann eine gleichlautende Abfrage die Antwort bereits
         # eingetragen haben — dann gar nicht erst ins Netz gehen.
         cached = _overpass_cache_get(ckey)
         if cached is not None:
-            return cached, 'CACHE'
+            return cached[0], 'CACHE', {'host': cached[1], 'tries': 0}
 
         gesamtfrist = time.time() + timeout + 8   # Obergrenze inkl. Wiederholungen
 
         def versuch():
-            """Ein Durchgang über die Endpoints. Rückgabe: (daten|None, fehlerliste)."""
+            """Ein Durchgang über die Endpoints. Rückgabe: (daten|None, fehlerliste, host)."""
             pending  = _ep_order()[:OVERPASS_MAX_TRIES]   # noch nicht gestartete
             futures  = {}                                 # future -> endpoint
             errs     = []
@@ -460,7 +480,7 @@ def _overpass_race(qs='', body=None, timeout=OVERPASS_TIMEOUT):
                     try:
                         data = fut.result()
                         if data:
-                            return data, errs
+                            return data, errs, host
                         errs.append(f'{host}: leere Antwort')
                     except urllib.error.HTTPError as e:
                         # 429 = Drosselung wegen zu vieler Abfragen — für den Nutzer klar
@@ -472,14 +492,14 @@ def _overpass_race(qs='', body=None, timeout=OVERPASS_TIMEOUT):
                     break
             if futures and not errs:
                 errs.append('Gesamt-Zeitüberschreitung')
-            return None, errs
+            return None, errs, ''
 
         errs = []
         for n in range(OVERPASS_RETRIES + 1):
-            data, errs = versuch()
+            data, errs, host = versuch()
             if data is not None:
-                _overpass_cache_put(ckey, data)
-                return data, None
+                _overpass_cache_put(ckey, data, host)
+                return data, None, {'host': host, 'tries': n + 1}
             # Nur bei Drosselung/Überlastung wiederholen: die kommen schnell zurück,
             # eine Zeitüberschreitung hat das Budget dagegen schon aufgebraucht.
             gedrosselt = bool(errs) and all(('429' in e or '504' in e or '503' in e)
@@ -489,7 +509,8 @@ def _overpass_race(qs='', body=None, timeout=OVERPASS_TIMEOUT):
                     or time.time() + pause + 5 > gesamtfrist):
                 break
             time.sleep(pause)
-        return None, '; '.join(errs) or 'alle Endpoints ausgelastet'
+        return (None, '; '.join(errs) or 'alle Endpoints ausgelastet',
+                {'host': '', 'tries': OVERPASS_RETRIES + 1})
     finally:
         _overpass_gate.release()
 
@@ -551,6 +572,9 @@ class Handler(http.server.SimpleHTTPRequestHandler):
                 self.send_response(404); self.end_headers()
         elif p.startswith('/api/brouter'):
             self._proxy_brouter()
+        elif p == '/api/overpass-status':
+            # Zustand der OSM-Server für das Protokollfenster
+            self._json(200, {'endpoints': _overpass_state()})
         elif p.startswith('/api/overpass'):
             self._proxy_overpass()
         elif p.startswith('/api/geocode'):
@@ -712,9 +736,11 @@ class Handler(http.server.SimpleHTTPRequestHandler):
             self.send_response(502); self.end_headers()
 
     # ── Overpass-Proxy ────────────────────────────────────────────────────────
-    def _send_overpass(self, data, err):
+    def _send_overpass(self, data, err, meta=None):
         """Gemeinsame Antwort für GET- und POST-Variante.
-        err == 'CACHE' bedeutet Erfolg aus dem Zwischenspeicher."""
+        err == 'CACHE' bedeutet Erfolg aus dem Zwischenspeicher.
+        Die X-Overpass-Kopfzeilen speisen das OSM-Protokollfenster im Frontend."""
+        meta = meta or {}
         if data is None:
             # 'detail' enthält NUR die Gründe je Server — das Frontend baut daraus
             # seinen eigenen Satz (sonst verschachteln sich zwei Meldungen).
@@ -722,16 +748,19 @@ class Handler(http.server.SimpleHTTPRequestHandler):
             return
         self.send_response(200)
         self.send_header('Content-Type', 'application/json')
+        self.send_header('Content-Length', str(len(data)))
         self.send_header('X-Overpass-Cache', 'hit' if err == 'CACHE' else 'miss')
+        self.send_header('X-Overpass-Server', meta.get('host', ''))
+        self.send_header('X-Overpass-Tries', str(meta.get('tries', 1)))
         self._cors()
         self.end_headers()
         self._safe_write(data)
 
     def _proxy_overpass(self):
         """GET-Variante: leitet ?data=... weiter (kurze Abfragen).
-        Alle Endpoints werden parallel angefragt (siehe _overpass_race)."""
-        data, err = _overpass_race(qs=self.path[len('/api/overpass'):])
-        self._send_overpass(data, err)
+        Die Endpoints werden gestaffelt angefragt (siehe _overpass_race)."""
+        data, err, meta = _overpass_race(qs=self.path[len('/api/overpass'):])
+        self._send_overpass(data, err, meta)
 
     def _proxy_geocode(self):
         """Proxied Nominatim-Ortssuche serverseitig — Nominatims Nutzungsbedingungen
@@ -757,10 +786,10 @@ class Handler(http.server.SimpleHTTPRequestHandler):
 
     def _proxy_overpass_post(self, body: bytes):
         """POST-Variante für lange around-Abfragen (sprengen das URL-Längenlimit).
-        Alle Endpoints werden parallel angefragt (siehe _overpass_race)."""
-        data, err = _overpass_race(body=_overpass_raw_query(body),
-                                   timeout=OVERPASS_TIMEOUT_POST)
-        self._send_overpass(data, err)
+        Die Endpoints werden gestaffelt angefragt (siehe _overpass_race)."""
+        data, err, meta = _overpass_race(body=_overpass_raw_query(body),
+                                         timeout=OVERPASS_TIMEOUT_POST)
+        self._send_overpass(data, err, meta)
 
     def _proxy_brouter(self):
         qs  = self.path[len('/api/brouter'):]

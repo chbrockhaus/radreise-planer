@@ -1,5 +1,11 @@
 # Changelog — Radreise Planer
 
+## v1.10.1 (2026-08-11)
+- **Fix: „811 Treffer" gemeldet, aber keine Punkte auf der Karte** — erst Aus- und Wiedereinschalten der Kategorie machte sie sichtbar. Ursache: Die App merkt sich je Kategorie, welche Orte schon gezeichnet sind (damit beim Verschieben keine doppelten Punkte entstehen). An zwei Stellen wurden die Punkte von der Karte genommen, ohne diese Merkliste zu leeren — danach galt jeder Treffer als „schon vorhanden" und wurde übersprungen. Betraf vor allem den Fall „zu weit herausgezoomt, dann wieder hinein" sowie den Abbrechen-Knopf. Beides läuft jetzt über eine gemeinsame Funktion, die immer beides zurücksetzt.
+- **Mehr Infos im OSM-Protokollfenster** (🛰-Schaltfläche):
+  - Jede erfolgreiche Abfrage zeigt jetzt zusätzlich, **welcher Server geantwortet hat**, die **Antwortgröße** und — falls es nicht der erste Versuch war — den wievielten (z. B. „177 Treffer · 4,1 s · 75 kB · lambert").
+  - Neu darüber eine **Übersicht aller OSM-Server** mit ihrer gemessenen Antwortzeit, laufenden Abfragen und einer Restzeit, falls ein Server nach Fehlern gerade übersprungen wird (z. B. „kumi — gesperrt 1 min", „lambert — 936 ms"). Damit ist ohne Umweg sichtbar, ob der bevorzugte Server wieder läuft.
+
 ## v1.10.0 (2026-08-11)
 - **`overpass.kumi.systems` ist wieder erste Wahl** (derselbe Server, den auch BRouter-Web benutzt). Die übrigen Server bleiben als Rückfall dahinter.
 - **Neu: Die Sperre für einen ausgefallenen Server verdoppelt sich** bei jedem weiteren Fehlversuch (90 s, 3 min, 6 min … bis 15 min), statt immer nach 90 Sekunden erneut anzulaufen. Ein Server, der längere Zeit nicht antwortet, kostet dadurch nur noch selten Wartezeit — sobald er wieder da ist, ist er sofort wieder erste Wahl.

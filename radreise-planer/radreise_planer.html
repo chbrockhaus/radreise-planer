@@ -289,6 +289,13 @@ header{background:var(--surface);border-bottom:1px solid var(--border);padding:9
 .osmlog-lbl{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--text)}
 .osmlog-ms{font-family:'DM Mono',monospace;font-size:10px;color:var(--muted);white-space:nowrap}
 .osmlog-empty{padding:10px;font-size:11px;color:var(--muted);font-style:italic;text-align:center}
+.osmsrv{padding:5px 8px;border-bottom:1px solid var(--border);font-size:10px;line-height:1.5}
+.osmsrv:empty{display:none}
+.osmsrv-row{display:flex;gap:6px;align-items:baseline;font-family:'DM Mono',monospace}
+.osmsrv-row .nm{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--text)}
+.osmsrv-row .st{color:var(--muted);white-space:nowrap}
+.osmsrv-row.cool .nm,.osmsrv-row.cool .st{color:#ff8a5c}
+.osmsrv-row.fast .st{color:var(--green,#28c76a)}
 .poi-set-lbl{font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.05em}
 .poi-set-val{font-family:'DM Mono',monospace;font-size:22px;font-weight:700;color:var(--accent);text-align:center;line-height:1}
 .poi-set-sub{font-size:9px;color:var(--muted);text-align:center}
@@ -328,7 +335,7 @@ header{background:var(--surface);border-bottom:1px solid var(--border);padding:9
 </head>
 <body>
 <header>
-  <div class="logo">🚴 Radreise Planer<span class="logo-ver">v1.10.0</span></div>
+  <div class="logo">🚴 Radreise Planer<span class="logo-ver">v1.10.1</span></div>
   <div class="stats">
     <div class="stat"><span class="sl">Route</span><span class="sv" id="hdrRoute" style="color:var(--muted)">–</span></div>
     <div class="stat"><span class="sl">Gesamt</span><span class="sv" id="hdrTotal" style="color:var(--muted)">–</span></div>
@@ -432,6 +439,7 @@ header{background:var(--surface);border-bottom:1px solid var(--border);padding:9
         <button onclick="clearOsmLog()">Leeren</button>
         <button onclick="toggleOsmLog()" title="Schließen">✕</button>
       </div>
+      <div id="osmSrvList" class="osmsrv"></div>
       <div id="osmLogList"><div class="osmlog-empty">Noch keine Abfragen</div></div>
     </div>
     <!-- Ortssuche -->
@@ -2071,7 +2079,7 @@ function abortOverpass() {
   _overpassActive = 0;
   _overpassHintHide(true);
   // Aktive POI-Layer leeren damit keine veralteten Marker bleiben
-  _activePois.forEach(id => _poiLayers[id]?.clearLayers());
+  _activePois.forEach(id => _clearPoiCat(id));
 }
 
 // ── OSM-Aktivitätsprotokoll ──────────────────────────────────────────────────
@@ -2084,7 +2092,38 @@ function toggleOsmLog() {
   const open = !el.classList.contains('open');
   el.classList.toggle('open', open);
   document.getElementById('osmLogBtn')?.classList.toggle('active', open);
-  if (open) _renderOsmLog();
+  if (open) { _renderOsmLog(); _loadOsmSrvState(); }
+}
+
+// 'overpass.kumi.systems' → 'kumi', 'lambert.openstreetmap.de' → 'lambert'
+function _shortHost(h) {
+  return String(h || '').replace(/^overpass\./, '').split('.')[0];
+}
+
+/** Zustand der OSM-Server (wer ist schnell, wer gerade gesperrt) — beantwortet
+ *  die Frage „läuft mein bevorzugter Server wieder?" ohne Blick ins Log. */
+async function _loadOsmSrvState() {
+  const box = document.getElementById('osmSrvList');
+  if (!box || !document.getElementById('osmLogPanel')?.classList.contains('open')) return;
+  try {
+    const r = await fetch('/api/overpass-status', { signal: AbortSignal.timeout(5000) });
+    const eps = (await r.json()).endpoints || [];
+    box.innerHTML = eps.map(e => {
+      let cls = '', st;
+      if (e.cool_s > 0) {
+        cls = 'cool';
+        st = e.cool_s >= 60 ? `gesperrt ${Math.round(e.cool_s/60)} min` : `gesperrt ${e.cool_s} s`;
+      } else if (e.avg_ms != null) {
+        cls = e.avg_ms < 3000 ? 'fast' : '';
+        st  = e.avg_ms >= 1000 ? (e.avg_ms/1000).toFixed(1) + ' s' : e.avg_ms + ' ms';
+      } else {
+        st = 'noch nicht genutzt';
+      }
+      if (e.inflight) st += ` · ${e.inflight} aktiv`;
+      return `<div class="osmsrv-row ${cls}"><span class="nm">${_shortHost(e.host)}</span>`
+           + `<span class="st">${st}</span></div>`;
+    }).join('');
+  } catch { box.innerHTML = ''; }
 }
 
 function clearOsmLog() {
@@ -2109,6 +2148,7 @@ function _osmLogEnd(entry, status, info) {
   Object.assign(entry, info || {});
   if (!_osmLog.some(e => e.status === 'run')) { clearInterval(_osmLogTimer); _osmLogTimer = null; }
   _renderOsmLog();
+  _loadOsmSrvState();   // Serverzustand kann sich durch diese Abfrage geändert haben
 }
 
 function _renderOsmLog() {
@@ -2122,7 +2162,14 @@ function _renderOsmLog() {
     const secs = ms >= 1000 ? (ms/1000).toFixed(1) + ' s' : ms + ' ms';
     let right;
     if (e.status === 'run')        right = secs + '…';
-    else if (e.status === 'ok')    right = `${e.n ?? '?'} Treffer · ${secs}${e.cached ? ' · Cache' : ''}`;
+    else if (e.status === 'ok') {
+      const teile = [`${e.n ?? '?'} Treffer`, secs];
+      if (e.bytes) teile.push(e.bytes >= 1024*1024
+        ? (e.bytes/1024/1024).toFixed(1) + ' MB' : Math.round(e.bytes/1024) + ' kB');
+      teile.push(e.cached ? 'Cache' : (_shortHost(e.server) || '?'));
+      if (e.tries > 1) teile.push(`${e.tries}. Versuch`);
+      right = teile.join(' · ');
+    }
     else if (e.status === 'abort') right = 'abgebrochen · ' + secs;
     else                           right = esc(e.msg || 'Fehler') + ' · ' + secs;
     return `<div class="osmlog-row ${e.status}">
@@ -2209,13 +2256,22 @@ async function overpassFetch(q, timeoutMs = OVERPASS_TIMEOUT, opts = {}){
           throw new Error(detail);
         }
         ctls.forEach((c, j) => { if (j !== i) c.abort(); }); // andere sofort abbrechen
-        // Server meldet über den Header, ob die Antwort aus seinem Cache kam
-        return { data: await r.json(), cached: r.headers.get('X-Overpass-Cache') === 'hit' };
+        // Der Proxy meldet per Kopfzeile, WER geantwortet hat, ob es aus seinem
+        // Zwischenspeicher kam und der wievielte Versuch es war — das speist das
+        // OSM-Protokollfenster.
+        return {
+          data:   await r.json(),
+          cached: r.headers.get('X-Overpass-Cache') === 'hit',
+          server: r.headers.get('X-Overpass-Server') || '',
+          tries:  parseInt(r.headers.get('X-Overpass-Tries') || '1', 10),
+          bytes:  parseInt(r.headers.get('Content-Length')   || '0', 10),
+        };
       })
     ).catch(() => null);
 
     if (res?.data) {
-      _osmLogEnd(logEntry, 'ok', { n: res.data.elements?.length ?? 0, cached: res.cached });
+      _osmLogEnd(logEntry, 'ok', { n: res.data.elements?.length ?? 0, cached: res.cached,
+                                   server: res.server, tries: res.tries, bytes: res.bytes });
       return res.data;
     }
 
@@ -5095,6 +5151,16 @@ function setPoiMaxKm(km) {
   _activePois.forEach(id => { _resetPoiCat(id); _fetchPoiCat(id); });
 }
 
+// Marker einer Kategorie von der Karte nehmen. IMMER über diese Funktion — wer
+// nur `clearLayers()` aufruft, lässt die Merkliste `_poiSeenIds` stehen, und
+// `_renderPoiMarkers` überspringt dann beim nächsten Laden JEDEN Treffer als
+// vermeintliches Duplikat: das Protokoll meldet „811 Treffer", die Karte bleibt
+// aber leer, bis man die Kategorie aus- und wieder einschaltet.
+function _clearPoiCat(id) {
+  _poiLayers[id]?.clearLayers();
+  _poiSeenIds[id]?.clear();
+}
+
 // Kategorie vollständig zurücksetzen (Layer + akkumulierte IDs + Cache)
 function _resetPoiCat(id) {
   _poiLayers[id]?.clearLayers();
@@ -5292,7 +5358,7 @@ async function _fetchPoiCatsNow(ids) {
 
   const reg = _poiRegion();
   if (reg.hint) {
-    cats.forEach(c => _poiLayers[c.id]?.clearLayers());
+    cats.forEach(c => _clearPoiCat(c.id));
     _overpassHintShow(reg.hint, reg.hintMs);
     return;
   }
