@@ -1,5 +1,9 @@
 # Changelog — Radreise Planer
 
+## v1.10.3 (2026-08-11)
+- **Wird die POI-Auswahl während einer laufenden Abfrage geändert, bricht diese jetzt sofort ab und startet mit der neuen Auswahl neu.** Bisher lief sie zu Ende und die neue Auswahl kam erst danach dran — man wartete also auf Ergebnisse, die man gerade abgewählt hatte. Gilt für Kategorie an/aus, Karten-/Streckenmodus und die Radius-Einstellungen. Beim bloßen Verschieben der Karte bleibt es beim bisherigen Verhalten (die laufende Abfrage darf fertig werden, die neue wird direkt danach nachgeholt) — dort sind die Ergebnisse ja weiterhin brauchbar.
+- **Der Abbruch wird dem Server jetzt aktiv gemeldet.** Bisher bemerkte er einen abgebrochenen Aufruf gar nicht, rechnete die verworfene Abfrage zu Ende und belegte dabei weiter einen der nur zwei Plätze, die die OSM-Server pro Nutzer erlauben — also genau den Platz, den die neu gestartete Abfrage braucht. Jetzt steigt er kurz nach der Meldung aus und schaltet keine weiteren Server mehr zu. Gemessen: Abfrage endete 1,0 s nach dem Abbruch (statt bis zu 20 s weiterzulaufen), die direkt folgende Abfrage lief in 0,6 s durch.
+
 ## v1.10.2 (2026-08-11)
 - **Das OSM-Protokollfenster ist jetzt deutlich größer und in der Größe verstellbar.** Standard ist gut doppelt so breit und doppelt so hoch wie bisher (640 × 560 statt 310 Pixel breit). Am blau schraffierten Griff oben links lässt es sich beliebig größer oder kleiner ziehen — das Fenster hängt unten rechts fest, wächst also nach oben und links und läuft nie über den Kartenrand hinaus. Die eingestellte Größe bleibt für das nächste Mal gespeichert. Die Abfrageliste wächst dabei mit.
 

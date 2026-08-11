@@ -379,6 +379,35 @@ def _overpass_fetch_one(ep, qs, body, timeout):
         _ep_release(ep, time.time() - t0 if ok else None)
 
 
+# Vom Browser aktiv gemeldete Abbrüche. Ohne diese Meldung rechnet der Handler
+# eine verworfene Abfrage zu Ende und belegt dabei weiter einen der zwei Plätze,
+# die Overpass je IP erlaubt — genau der Platz, den die neu gestartete Abfrage
+# braucht. Die schon laufende Netzanfrage lässt sich zwar nicht abbrechen, aber
+# es wird kein weiterer Endpoint mehr dazugeschaltet und die Warteschlange wird
+# sofort freigegeben.
+CANCEL_TTL   = 120            # Sekunden, die ein gemeldeter Abbruch gilt
+_cancelled   = {}             # token -> zeitstempel
+_cancel_lock = threading.Lock()
+
+
+def _cancel_mark(token):
+    if not token:
+        return
+    with _cancel_lock:
+        _cancelled[token] = time.time()
+        if len(_cancelled) > 500:
+            alt = time.time() - CANCEL_TTL
+            for k in [k for k, t in _cancelled.items() if t < alt]:
+                del _cancelled[k]
+
+
+def _cancel_check(token):
+    if not token:
+        return False
+    with _cancel_lock:
+        return token in _cancelled
+
+
 def _overpass_state():
     """Zustand je Endpoint für das OSM-Protokollfenster im Frontend."""
     now = time.time()
@@ -405,7 +434,7 @@ def _overpass_raw_query(body: bytes) -> bytes:
     return body
 
 
-def _overpass_race(qs='', body=None, timeout=OVERPASS_TIMEOUT):
+def _overpass_race(qs='', body=None, timeout=OVERPASS_TIMEOUT, token=None):
     """Fragt den aussichtsreichsten Endpoint an und schaltet nur bei Bedarf nach.
 
     Ein zweiter (bzw. dritter) Endpoint wird erst gestartet, wenn nach
@@ -435,6 +464,8 @@ def _overpass_race(qs='', body=None, timeout=OVERPASS_TIMEOUT):
         cached = _overpass_cache_get(ckey)
         if cached is not None:
             return cached[0], 'CACHE', {'host': cached[1], 'tries': 0}
+        if _cancel_check(token):      # während des Anstehens verworfen
+            return None, 'abgebrochen', {'host': '', 'tries': 0}
 
         gesamtfrist = time.time() + timeout + 8   # Obergrenze inkl. Wiederholungen
 
@@ -462,6 +493,8 @@ def _overpass_race(qs='', body=None, timeout=OVERPASS_TIMEOUT):
                 return False
 
             while time.time() < frist:
+                if _cancel_check(token):
+                    return None, ['abgebrochen'], ''
                 start_next()
                 if not futures:
                     if not pending:
@@ -473,7 +506,7 @@ def _overpass_race(qs='', body=None, timeout=OVERPASS_TIMEOUT):
                     break
                 done, _ = concurrent.futures.wait(
                     futures,
-                    timeout=min(OVERPASS_STAGGER, rest) if pending else rest,
+                    timeout=min(OVERPASS_STAGGER, rest),
                     return_when=concurrent.futures.FIRST_COMPLETED)
                 for fut in done:
                     host = futures.pop(fut).split('/')[2]
@@ -502,6 +535,8 @@ def _overpass_race(qs='', body=None, timeout=OVERPASS_TIMEOUT):
                 return data, None, {'host': host, 'tries': n + 1}
             # Nur bei Drosselung/Überlastung wiederholen: die kommen schnell zurück,
             # eine Zeitüberschreitung hat das Budget dagegen schon aufgebraucht.
+            if errs == ['abgebrochen']:
+                return None, 'abgebrochen', {'host': '', 'tries': n + 1}
             gedrosselt = bool(errs) and all(('429' in e or '504' in e or '503' in e)
                                             for e in errs)
             pause = OVERPASS_BACKOFF * (3 ** n)
@@ -572,6 +607,11 @@ class Handler(http.server.SimpleHTTPRequestHandler):
                 self.send_response(404); self.end_headers()
         elif p.startswith('/api/brouter'):
             self._proxy_brouter()
+        elif p == '/api/overpass-cancel':
+            # Browser meldet: diese Abfrage wird nicht mehr gebraucht
+            _cancel_mark(urllib.parse.parse_qs(
+                self.path.partition('?')[2]).get('t', [''])[0])
+            self._json(200, {'ok': True})
         elif p == '/api/overpass-status':
             # Zustand der OSM-Server für das Protokollfenster
             self._json(200, {'endpoints': _overpass_state()})
@@ -759,7 +799,8 @@ class Handler(http.server.SimpleHTTPRequestHandler):
     def _proxy_overpass(self):
         """GET-Variante: leitet ?data=... weiter (kurze Abfragen).
         Die Endpoints werden gestaffelt angefragt (siehe _overpass_race)."""
-        data, err, meta = _overpass_race(qs=self.path[len('/api/overpass'):])
+        data, err, meta = _overpass_race(qs=self.path[len('/api/overpass'):],
+                                         token=self.headers.get('X-Client-Token'))
         self._send_overpass(data, err, meta)
 
     def _proxy_geocode(self):
@@ -788,7 +829,8 @@ class Handler(http.server.SimpleHTTPRequestHandler):
         """POST-Variante für lange around-Abfragen (sprengen das URL-Längenlimit).
         Die Endpoints werden gestaffelt angefragt (siehe _overpass_race)."""
         data, err, meta = _overpass_race(body=_overpass_raw_query(body),
-                                         timeout=OVERPASS_TIMEOUT_POST)
+                                         timeout=OVERPASS_TIMEOUT_POST,
+                                         token=self.headers.get('X-Client-Token'))
         self._send_overpass(data, err, meta)
 
     def _proxy_brouter(self):

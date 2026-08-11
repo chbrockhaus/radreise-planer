@@ -341,7 +341,7 @@ header{background:var(--surface);border-bottom:1px solid var(--border);padding:9
 </head>
 <body>
 <header>
-  <div class="logo">🚴 Radreise Planer<span class="logo-ver">v1.10.2</span></div>
+  <div class="logo">🚴 Radreise Planer<span class="logo-ver">v1.10.3</span></div>
   <div class="stats">
     <div class="stat"><span class="sl">Route</span><span class="sv" id="hdrRoute" style="color:var(--muted)">–</span></div>
     <div class="stat"><span class="sl">Gesamt</span><span class="sv" id="hdrTotal" style="color:var(--muted)">–</span></div>
@@ -2273,6 +2273,14 @@ async function overpassFetch(q, timeoutMs = OVERPASS_TIMEOUT, opts = {}){
 
   const ctls = OVERPASS_ENDPOINTS.map(() => new AbortController());
 
+  // Kennung, mit der wir dem Proxy einen Abbruch melden können. Ohne diese
+  // Meldung arbeitet er die verworfene Abfrage zu Ende und belegt weiter einen
+  // der zwei Plätze, die Overpass je IP erlaubt — den die neue Abfrage braucht.
+  const token = 'q' + Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
+  const meldeAbbruch = () => {
+    try { fetch('/api/overpass-cancel?t=' + token, { keepalive: true }).catch(() => {}); } catch {}
+  };
+
   // mkOpts(i): kombiniert eigenen Abort + externen Abort + Timeout + per-Request-Ctl
   // → wenn ein Request gewinnt, bricht ctls[i].abort() die anderen wirklich ab
   const mkOpts = (i) => {
@@ -2282,11 +2290,12 @@ async function overpassFetch(q, timeoutMs = OVERPASS_TIMEOUT, opts = {}){
       ? AbortSignal.any(signals) : AbortSignal.timeout(timeoutMs);
     if (usePost) return {
       method: 'POST',
-      headers: {'Content-Type': 'application/x-www-form-urlencoded'},
+      headers: {'Content-Type': 'application/x-www-form-urlencoded',
+                'X-Client-Token': token},
       body:   'data=' + encodeURIComponent(q),
       signal,
     };
-    return { signal };
+    return { signal, headers: {'X-Client-Token': token} };
   };
 
   let failDetail = '';   // Begründung des Servers (welcher Endpoint warum scheiterte)
@@ -2323,6 +2332,7 @@ async function overpassFetch(q, timeoutMs = OVERPASS_TIMEOUT, opts = {}){
 
     // Überholt/abgebrochen? Dann ist das kein Fehler, sondern gewollt.
     if (opts.signal?.aborted || ownCtl.signal.aborted) {
+      meldeAbbruch();          // Proxy soll nicht weiterrechnen (Platz freigeben)
       _osmLogEnd(logEntry, 'abort');
       throw new DOMException('Abfrage abgebrochen', 'AbortError');
     }
@@ -5194,7 +5204,8 @@ function setPoiMaxKm(km) {
   _poiMaxKm = km;
   localStorage.setItem('poiMaxKm', km);
   _updatePoiKmBtns();
-  _activePois.forEach(id => { _resetPoiCat(id); _fetchPoiCat(id); });
+  _activePois.forEach(id => _resetPoiCat(id));
+  _fetchPoiCats([..._activePois], { restart: true });
 }
 
 // Marker einer Kategorie von der Karte nehmen. IMMER über diese Funktion — wer
@@ -5219,7 +5230,7 @@ function setPoiRouteKm(km) {
   localStorage.setItem('poiRouteKm', km);
   _updatePoiKmBtns();
   _activePois.forEach(id => _resetPoiCat(id));
-  _fetchPoiCats([..._activePois]);
+  _fetchPoiCats([..._activePois], { restart: true });
 }
 
 function setPoiMode(mode) {
@@ -5229,7 +5240,7 @@ function setPoiMode(mode) {
   document.getElementById('poiRouteControls').style.display = mode === 'route' ? '' : 'none';
   _updatePoiKmBtns();
   _activePois.forEach(id => _resetPoiCat(id));
-  _fetchPoiCats([..._activePois]);
+  _fetchPoiCats([..._activePois], { restart: true });
 }
 
 function _initPoiSettings() {
@@ -5252,8 +5263,11 @@ function togglePoiCat(id) {
     _resetPoiCat(id);
   } else {
     _activePois.add(id);
-    _fetchPoiCat(id);
   }
+  // Auswahl geändert → laufende Abfrage abbrechen und mit der neuen Auswahl
+  // neu starten (auch beim Abwählen: die laufende Abfrage holt dann Daten, die
+  // niemand mehr sehen will, und blockiert solange die nächste).
+  _fetchPoiCats([..._activePois], { restart: true });
   document.querySelector(`.poi-btn[data-cat="${id}"]`)?.classList.toggle('poi-active', _activePois.has(id));
 }
 
@@ -5375,23 +5389,36 @@ function _poiRegion() {
 async function _fetchPoiCat(id) { return _fetchPoiCats([id]); }
 
 // Immer nur EINE POI-Abfrage unterwegs — wie `requestIsActive` in
-// overpass-frontend. Kommt während einer laufenden Abfrage eine neue dazu (Karte
-// weiter verschoben), wird sie nur gemerkt und danach EINMAL nachgeholt; sie
-// benutzt dann den dann aktuellen Kartenausschnitt.
-// Früher wurde die laufende Abfrage stattdessen abgebrochen. Das half nichts:
-// der Python-Handler bemerkt den Abbruch nicht, rechnet weiter und belegt bis
-// zum Ende einen der zwei Slots, die Overpass je IP erlaubt — die neue Abfrage
-// lief dadurch in Drosselung/Zeitüberschreitung, obwohl die alte fast fertig war.
-let _poiBusy    = false;
-let _poiPending = null;
+// overpass-frontend. Zwei Fälle werden unterschieden:
+//
+// • Karte verschoben/gezoomt → EINREIHEN. Die laufende Abfrage darf fertig
+//   werden, die neue wird gemerkt und danach einmal mit dem dann aktuellen
+//   Ausschnitt nachgeholt. Sie abzubrechen brächte nichts: die Ergebnisse sind
+//   auch nach dem Verschieben brauchbar (der Zwischenspeicher füllt sich).
+//
+// • POI-Auswahl geändert (Kategorie an/aus, Modus, Radius) → ABBRECHEN und
+//   sofort neu starten (opts.restart). Auf Ergebnisse zu warten, die man gerade
+//   abgewählt hat, wäre unsinnig. Der Abbruch wird dem Proxy gemeldet
+//   (/api/overpass-cancel), sonst rechnet der weiter und belegt genau den Platz,
+//   den der Neustart braucht.
+let _poiBusy        = false;
+let _poiPending     = null;
+let _poiAbortWanted = false;   // Neustart gewünscht — auch zwischen zwei Gruppen
 
-async function _fetchPoiCats(ids) {
-  if (_poiBusy) { _poiPending = ids; return; }
+async function _fetchPoiCats(ids, opts = {}) {
+  if (_poiBusy) {
+    _poiPending = ids;
+    // Der laufende Aufruf holt _poiPending in seinem finally sofort nach.
+    if (opts.restart) { _poiAbortWanted = true; _poiInflight['bundle']?.abort(); }
+    return;
+  }
   _poiBusy = true;
+  _poiAbortWanted = false;
   try {
     await _fetchPoiCatsNow(ids);
   } finally {
     _poiBusy = false;
+    _poiAbortWanted = false;
     const next = _poiPending;
     _poiPending = null;
     if (next) _fetchPoiCats(next);
@@ -5419,6 +5446,7 @@ async function _fetchPoiCatsNow(ids) {
   }
 
   for (let i = 0; i < missing.length; i += POI_BUNDLE_MAX) {
+    if (_poiAbortWanted) return;    // Auswahl geändert — Rest gar nicht erst holen
     const group = missing.slice(i, i + POI_BUNDLE_MAX);
     // `out center tags` für alle: liefert Nodes ihre lat/lon und Ways einen
     // center-Punkt — deshalb reicht EIN out-Ausdruck für gemischte Kategorien.
