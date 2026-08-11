@@ -1,5 +1,8 @@
 # Changelog — Radreise Planer
 
+## v1.9.8 (2026-08-11)
+- **Fix: Mehrere POI-Kategorien gleichzeitig liefen zwangsläufig in die Drosselung.** Die öffentlichen OSM-Server erlauben laut ihrer eigenen Statusauskunft nur **2 gleichzeitige Abfragen pro Nutzer** — wurden mehrere Kategorien auf einmal geladen, wies der Server alle darüber hinaus mit „429 Too Many Requests" ab. Der Server stellt Abfragen jetzt in eine Warteschlange und lässt höchstens zwei gleichzeitig durch (weitere warten bis zu 20 Sekunden, statt sofort abgewiesen zu werden). Damit bleibt die App dauerhaft innerhalb des erlaubten Rahmens, statt sich selbst auszusperren.
+
 ## v1.9.7 (2026-08-11)
 - **Fehlermeldungen bei OSM-Abfragen sagen jetzt, was wirklich los ist.** Bisher hieß es pauschal „Overpass nicht erreichbar (Wartung/Überlastung?)" — egal ob die Server gedrosselt haben, überlastet waren oder tatsächlich ausgefallen sind. Jetzt wird unterschieden: Bei Drosselung (429) oder Überlastung (504/Zeitüberschreitung) steht sinngemäß „Server gerade überlastet — legt sich meist nach ein paar Minuten, bereits geladene Ergebnisse bleiben nutzbar", statt einen Ausfall zu suggerieren. Im OSM-Aktivitätsprotokoll steht zudem pro Server der genaue Grund (z. B. „overpass-api.de: HTTP 504; kumi.systems: Zeitüberschreitung"), sodass man sieht, ob es an einem einzelnen Server liegt oder an allen.
 

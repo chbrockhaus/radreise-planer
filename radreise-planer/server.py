@@ -205,6 +205,15 @@ OVERPASS_ENDPOINTS = [
 _OVERPASS_POOL = concurrent.futures.ThreadPoolExecutor(
     max_workers=64, thread_name_prefix='overpass')
 
+# Die öffentlichen Server melden unter /api/status "Rate limit: 2" — mehr als zwei
+# gleichzeitige Abfragen je IP quittieren sie mit 429. Mehrere POI-Kategorien
+# gleichzeitig zu laden lief also zwangsläufig in die Drosselung. Deshalb hier
+# hart auf zwei gleichzeitige Abfragen begrenzen: die dritte wartet kurz, statt
+# abgelehnt zu werden.
+OVERPASS_MAX_PARALLEL = 2
+OVERPASS_QUEUE_WAIT   = 20   # Sekunden, die eine wartende Abfrage max. ansteht
+_overpass_gate = threading.Semaphore(OVERPASS_MAX_PARALLEL)
+
 
 # Kurzzeit-Cache für identische Abfragen (POI-Kategorie aus-/wieder einschalten,
 # Seiten-Reload, gleicher Kartenausschnitt). Entlastet die öffentlichen Overpass-
@@ -276,30 +285,44 @@ def _overpass_race(qs='', body=None, timeout=OVERPASS_TIMEOUT):
     if cached is not None:
         return cached, 'CACHE'   # Sonderfall: kein Fehler, sondern Cache-Treffer
 
-    futures = {_OVERPASS_POOL.submit(_overpass_fetch_one, ep, qs, body, timeout): ep
-               for ep in OVERPASS_ENDPOINTS}
-    errs = []
+    # Anstellen statt losstürmen (siehe OVERPASS_MAX_PARALLEL): mehrere POI-
+    # Kategorien gleichzeitig überschritten sonst das Limit gleichzeitiger
+    # Abfragen je IP und wurden allesamt mit 429 abgewiesen.
+    if not _overpass_gate.acquire(timeout=OVERPASS_QUEUE_WAIT):
+        return None, f'zu viele gleichzeitige Abfragen (> {OVERPASS_QUEUE_WAIT}s gewartet)'
     try:
-        for fut in concurrent.futures.as_completed(futures, timeout=timeout + 2):
-            host = futures[fut].split('/')[2]
-            try:
-                data = fut.result()
-                if data:
-                    _overpass_cache_put(ckey, data)
-                    return data, None
-            except urllib.error.HTTPError as e:
-                # 429 = Drosselung wegen zu vieler Abfragen — für den Nutzer klar
-                # unterscheidbar von "Server weg", denn hier hilft nur abwarten.
-                errs.append(f'{host}: {"Drosselung (429)" if e.code == 429 else f"HTTP {e.code}"}')
-            except Exception as e:
-                errs.append(f'{host}: {"Zeitüberschreitung" if isinstance(e, (TimeoutError, socket.timeout)) else type(e).__name__}')
-    except concurrent.futures.TimeoutError:
-        errs.append('Gesamt-Zeitüberschreitung')
+        # Während des Wartens kann eine gleichlautende Abfrage die Antwort bereits
+        # eingetragen haben — dann gar nicht erst ins Netz gehen.
+        cached = _overpass_cache_get(ckey)
+        if cached is not None:
+            return cached, 'CACHE'
+
+        futures = {_OVERPASS_POOL.submit(_overpass_fetch_one, ep, qs, body, timeout): ep
+                   for ep in OVERPASS_ENDPOINTS}
+        errs = []
+        try:
+            for fut in concurrent.futures.as_completed(futures, timeout=timeout + 2):
+                host = futures[fut].split('/')[2]
+                try:
+                    data = fut.result()
+                    if data:
+                        _overpass_cache_put(ckey, data)
+                        return data, None
+                except urllib.error.HTTPError as e:
+                    # 429 = Drosselung wegen zu vieler Abfragen — für den Nutzer klar
+                    # unterscheidbar von "Server weg", denn hier hilft nur abwarten.
+                    errs.append(f'{host}: {"Drosselung (429)" if e.code == 429 else f"HTTP {e.code}"}')
+                except Exception as e:
+                    errs.append(f'{host}: {"Zeitüberschreitung" if isinstance(e, (TimeoutError, socket.timeout)) else type(e).__name__}')
+        except concurrent.futures.TimeoutError:
+            errs.append('Gesamt-Zeitüberschreitung')
+        finally:
+            # Noch nicht gestartete abbrechen; laufende beenden sich per eigenem Timeout.
+            for fut in futures:
+                fut.cancel()
+        return None, '; '.join(errs) or 'keine Antwort'
     finally:
-        # Noch nicht gestartete abbrechen; laufende beenden sich per eigenem Timeout.
-        for fut in futures:
-            fut.cancel()
-    return None, '; '.join(errs) or 'keine Antwort'
+        _overpass_gate.release()
 
 
 # ── HTTP-Handler ──────────────────────────────────────────────────────────────
