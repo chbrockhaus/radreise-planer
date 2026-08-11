@@ -311,7 +311,7 @@ header{background:var(--surface);border-bottom:1px solid var(--border);padding:9
 </head>
 <body>
 <header>
-  <div class="logo">🚴 Radreise Planer<span class="logo-ver">v1.9.4</span></div>
+  <div class="logo">🚴 Radreise Planer<span class="logo-ver">v1.9.5</span></div>
   <div class="stats">
     <div class="stat"><span class="sl">Route</span><span class="sv" id="hdrRoute" style="color:var(--muted)">–</span></div>
     <div class="stat"><span class="sl">Gesamt</span><span class="sv" id="hdrTotal" style="color:var(--muted)">–</span></div>
@@ -1733,13 +1733,12 @@ function hav(la1,lo1,la2,lo2){
   return R*2*Math.asin(Math.sqrt(a));
 }
 
-const OVERPASS_ENDPOINTS=[
-  '/api/overpass',                                       // Serverseitiger Proxy (kein CORS, schnell)
-  'https://overpass-api.de/api/interpreter',
-  'https://lz4.overpass-api.de/api/interpreter',
-  'https://overpass.kumi.systems/api/interpreter',
-  'https://overpass.private.coffee/api/interpreter'
-];
+// Nur der serverseitige Proxy — er fragt die vier öffentlichen Overpass-Server
+// seinerseits PARALLEL an (siehe _overpass_race in server.py) und liefert die
+// erste Antwort. Die Server direkt aus dem Browser anzufragen brachte nichts:
+// gemessen 2026-08 scheiterten alle vier (CORS bzw. Rate-Limit/Timeout), während
+// dieselben Server serverseitig in 2–3 s antworten.
+const OVERPASS_ENDPOINTS=['/api/overpass'];
 const OVERPASS_TIMEOUT       = 30000; // ms für normale Abfragen
 const OVERPASS_TIMEOUT_ROUTE = 75000; // ms für Strecken-Abfragen (around:Radius entlang Route)
 

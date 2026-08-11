@@ -1,5 +1,11 @@
 # Changelog — Radreise Planer
 
+## v1.9.5 (2026-08-11)
+- **Fix: App war insgesamt zäh — jeder einzelne Server-Aufruf kostete ~2 Sekunden.** Der Server lauschte nur auf IPv4, während `localhost` zuerst zu IPv6 (`::1`) aufgelöst wird. Dadurch lief JEDER Aufruf (Kartenkacheln, Routing, POI-Suche, Speichern) erst in einen ~2-Sekunden-Verbindungs-Timeout, bevor er auf IPv4 zurückfiel. Gemessen: 2,057 s → 0,019 s pro Aufruf. Der Server lauscht jetzt gleichzeitig auf IPv6 und IPv4.
+- **Fix: OSM-Abfragen probierten die Server nacheinander durch statt gleichzeitig.** Der erste Server in der Liste (overpass-api.de) ist regelmäßig überlastet (gemessen ~23 s), ein weiterer war gar nicht erreichbar — deren Timeouts summierten sich, bevor die schnellen Server (~2–3 s) überhaupt gefragt wurden. Jetzt werden alle gleichzeitig angefragt, die erste Antwort gewinnt. Der dauerhaft nicht erreichbare Server wurde entfernt.
+- **Fix: Strecken-POI-Suche funktionierte gar nicht.** Lange Abfragen entlang der Route werden per POST geschickt — das POST-Format war falsch (Formular-kodiert statt roher Abfrage), sodass die Server jedes Mal ins Timeout liefen. Im lokalen Server fehlte die POST-Behandlung zudem komplett (404).
+- **Neu: Serverseitiger Zwischenspeicher für OSM-Abfragen** (10 Minuten). Identische Abfragen — POI-Kategorie aus- und wieder einschalten, gleicher Kartenausschnitt, Seiten-Reload — kommen jetzt sofort aus dem Speicher (gemessen 360 ms → 3 ms) statt erneut über das Netz. Das entlastet auch die öffentlichen OSM-Server, die bei häufigen Wiederholungen drosseln.
+
 ## v1.9.4 (2026-08-11)
 - **Neu: Ortssuche auf der Karte.** Neuer 🔍-Button in den Kartensteuerelementen — Ort, Adresse oder POI eingeben, aus den Treffern wählen, die Karte springt dorthin und setzt einen Marker. Läuft über einen neuen serverseitigen Proxy zu Nominatim (`/api/geocode`), damit kein CORS-Problem im Browser entsteht und Nominatims Nutzungsbedingungen (eigener User-Agent) eingehalten werden.
 

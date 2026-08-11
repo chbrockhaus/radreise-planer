@@ -9,14 +9,17 @@ Radreise Planer – HTTP-Server für Docker / Home Assistant Add-on.
     damit /api/-Aufrufe des Browsers korrekt durch den Ingress-Proxy geleitet werden.
 """
 
+import concurrent.futures
 import http.server
 import json
 import os
 import re as _re
+import socket
 import socketserver
 import subprocess
 import sys
 import threading
+import time
 import urllib.request
 import urllib.parse
 import urllib.error
@@ -44,8 +47,11 @@ TOURS_DIR              = os.path.join(DATA_DIR, 'tours')
 SEGMENTS_REFRESHED_FILE = os.path.join(DATA_DIR, 'segments_refreshed.json')
 
 BROUTER_PORT    = 17777
-OVERPASS_TIMEOUT      = 8    # Sekunden pro Endpoint (GET) – schnell scheitern
-OVERPASS_TIMEOUT_POST = 15   # POST (around-Route) darf etwas länger dauern
+# Alle Endpoints werden PARALLEL angefragt (siehe _overpass_race), daher darf das
+# Timeout pro Endpoint großzügig sein: ein langsamer Endpoint blockiert die
+# schnellen nicht mehr, dient aber weiterhin als Reserve wenn die schnellen ausfallen.
+OVERPASS_TIMEOUT      = 25   # Sekunden pro Endpoint (GET)
+OVERPASS_TIMEOUT_POST = 40   # POST (around-Route) darf länger dauern
 APP_DIR         = os.path.dirname(os.path.abspath(__file__))
 TILE_CACHE_DIR  = os.path.join(DATA_DIR, 'tile_cache')
 
@@ -180,6 +186,119 @@ def delete_tour(tid):
         os.remove(fname)
         return True
     return False
+
+# ── Overpass: alle Endpoints parallel anfragen ────────────────────────────────
+# Reihenfolge nur noch dokumentarisch (parallel) — gemessene Antwortzeiten 2026-08:
+# private.coffee ~2s, kumi.systems ~3s, overpass-api.de ~23s.
+# lz4.overpass-api.de wurde entfernt: lief jedes Mal ins volle Timeout (Verbindung
+# wird nicht angenommen) und belegte damit dauerhaft einen Poolplatz pro Anfrage.
+OVERPASS_ENDPOINTS = [
+    'https://overpass.private.coffee/api/interpreter',
+    'https://overpass.kumi.systems/api/interpreter',
+    'https://overpass-api.de/api/interpreter',
+]
+
+# Großzügig dimensioniert: nach einem Rennen laufen die unterlegenen Anfragen noch
+# bis zu OVERPASS_TIMEOUT weiter (Threads lassen sich in Python nicht abbrechen) und
+# belegen so lange einen Platz. Ein zu kleiner Pool führte dazu, dass neue Anfragen
+# hinter diesen Nachzüglern warten mussten und erst nach ~27 s ins Leere liefen.
+_OVERPASS_POOL = concurrent.futures.ThreadPoolExecutor(
+    max_workers=64, thread_name_prefix='overpass')
+
+
+# Kurzzeit-Cache für identische Abfragen (POI-Kategorie aus-/wieder einschalten,
+# Seiten-Reload, gleicher Kartenausschnitt). Entlastet die öffentlichen Overpass-
+# Server spürbar — die drosseln bei häufigen Wiederholungen und antworten dann
+# minutenlang zäh oder gar nicht.
+OVERPASS_CACHE_TTL  = 600   # Sekunden
+OVERPASS_CACHE_MAX  = 200   # Einträge
+_overpass_cache      = {}   # key -> (zeitstempel, daten)
+_overpass_cache_lock = threading.Lock()
+
+
+def _overpass_cache_get(key):
+    with _overpass_cache_lock:
+        hit = _overpass_cache.get(key)
+        if not hit:
+            return None
+        if time.time() - hit[0] >= OVERPASS_CACHE_TTL:
+            del _overpass_cache[key]
+            return None
+        return hit[1]
+
+
+def _overpass_cache_put(key, data):
+    with _overpass_cache_lock:
+        _overpass_cache[key] = (time.time(), data)
+        if len(_overpass_cache) > OVERPASS_CACHE_MAX:
+            oldest = min(_overpass_cache, key=lambda k: _overpass_cache[k][0])
+            del _overpass_cache[oldest]
+
+
+def _overpass_fetch_one(ep, qs, body, timeout):
+    """Eine einzelne Overpass-Anfrage; wirft bei Fehler.
+
+    `body` ist der ROHE Query (bytes). Das früher benutzte Formular-Format
+    ('data=<urlencodiert>' mit Content-Type x-www-form-urlencoded) nahmen die
+    Endpoints nicht an — die Anfrage lief jedes Mal ins Timeout, wodurch die
+    Strecken-POI-Suche gar nicht funktionierte.
+    """
+    headers = {'User-Agent': 'RadreisePlaner/1.0', 'Accept': 'application/json'}
+    if body is None:
+        req = urllib.request.Request(ep + qs, headers=headers)
+    else:
+        req = urllib.request.Request(ep, data=body, headers=headers, method='POST')
+    with urllib.request.urlopen(req, timeout=timeout) as resp:
+        return resp.read()
+
+
+def _overpass_raw_query(body: bytes) -> bytes:
+    """Holt den rohen Query aus dem Request-Body des Frontends.
+    Das Frontend schickt 'data=<urlencodiert>'; ältere/direkte Aufrufer den Query pur."""
+    text = body.decode('utf-8', 'replace')
+    if text.startswith('data='):
+        return urllib.parse.unquote_plus(text[5:]).encode('utf-8')
+    return body
+
+
+def _overpass_race(qs='', body=None, timeout=OVERPASS_TIMEOUT):
+    """Fragt ALLE Endpoints gleichzeitig an — die erste gültige Antwort gewinnt.
+
+    Vorher wurden die Endpoints sequenziell durchprobiert. Da der erste
+    (overpass-api.de) regelmäßig überlastet ist und lz4 zeitweise gar nicht
+    erreichbar, summierten sich die Timeouts auf 15–30 s, obwohl
+    private.coffee/kumi.systems in 2–3 s antworten.
+    Identische Abfragen kommen aus dem Cache (siehe _overpass_cache_get).
+    Rückgabe: (daten_bytes, None) oder (None, fehlertext).
+    """
+    ckey = body if body is not None else qs
+    cached = _overpass_cache_get(ckey)
+    if cached is not None:
+        return cached, None
+
+    futures = {_OVERPASS_POOL.submit(_overpass_fetch_one, ep, qs, body, timeout): ep
+               for ep in OVERPASS_ENDPOINTS}
+    last_err = 'keine Antwort'
+    try:
+        for fut in concurrent.futures.as_completed(futures, timeout=timeout + 2):
+            host = futures[fut].split('/')[2]
+            try:
+                data = fut.result()
+                if data:
+                    _overpass_cache_put(ckey, data)
+                    return data, None
+            except urllib.error.HTTPError as e:
+                last_err = f'{host}: HTTP {e.code}'
+            except Exception as e:
+                last_err = f'{host}: {type(e).__name__}'
+    except concurrent.futures.TimeoutError:
+        last_err = 'Zeitüberschreitung'
+    finally:
+        # Noch nicht gestartete abbrechen; laufende beenden sich per eigenem Timeout.
+        for fut in futures:
+            fut.cancel()
+    return None, last_err
+
 
 # ── HTTP-Handler ──────────────────────────────────────────────────────────────
 class Handler(http.server.SimpleHTTPRequestHandler):
@@ -399,39 +518,22 @@ class Handler(http.server.SimpleHTTPRequestHandler):
             self.send_response(502); self.end_headers()
 
     # ── Overpass-Proxy ────────────────────────────────────────────────────────
-    _OVERPASS_EPS = [
-        'https://overpass-api.de/api/interpreter',
-        'https://lz4.overpass-api.de/api/interpreter',
-        'https://overpass.kumi.systems/api/interpreter',
-        'https://overpass.private.coffee/api/interpreter',
-    ]
+    def _send_overpass(self, data, err):
+        """Gemeinsame Antwort für GET- und POST-Variante."""
+        if data is None:
+            self._json(502, {'error': f'Overpass nicht erreichbar ({err})'})
+            return
+        self.send_response(200)
+        self.send_header('Content-Type', 'application/json')
+        self._cors()
+        self.end_headers()
+        self._safe_write(data)
 
     def _proxy_overpass(self):
-        """GET-Variante: leitet ?data=... weiter (kurze Abfragen)."""
-        qs = self.path[len('/api/overpass'):]  # ?data=...
-        last_err = 'keine Antwort'
-        for ep in self._OVERPASS_EPS:
-            host = ep.split('/')[2]
-            try:
-                req = urllib.request.Request(
-                    ep + qs,
-                    headers={'User-Agent': 'RadreisePlaner/1.0', 'Accept': 'application/json'}
-                )
-                with urllib.request.urlopen(req, timeout=OVERPASS_TIMEOUT) as resp:
-                    data = resp.read()
-                self.send_response(200)
-                self.send_header('Content-Type', 'application/json')
-                self._cors()
-                self.end_headers()
-                self._safe_write(data)
-                return
-            except urllib.error.HTTPError as e:
-                last_err = f'{host}: HTTP {e.code}'
-                continue
-            except Exception as e:
-                last_err = f'{host}: {type(e).__name__}'
-                continue
-        self._json(502, {'error': f'Overpass nicht erreichbar ({last_err})'})
+        """GET-Variante: leitet ?data=... weiter (kurze Abfragen).
+        Alle Endpoints werden parallel angefragt (siehe _overpass_race)."""
+        data, err = _overpass_race(qs=self.path[len('/api/overpass'):])
+        self._send_overpass(data, err)
 
     def _proxy_geocode(self):
         """Proxied Nominatim-Ortssuche serverseitig — Nominatims Nutzungsbedingungen
@@ -456,37 +558,11 @@ class Handler(http.server.SimpleHTTPRequestHandler):
             self._json(502, {'error': f'Nominatim nicht erreichbar ({type(e).__name__})'})
 
     def _proxy_overpass_post(self, body: bytes):
-        """POST-Variante: body = b'data=<url-encoded-query>' (lange around-Abfragen)."""
-        last_err = 'keine Antwort'
-        for ep in self._OVERPASS_EPS:
-            host = ep.split('/')[2]
-            try:
-                req = urllib.request.Request(
-                    ep,
-                    data=body,
-                    headers={
-                        'User-Agent':    'RadreisePlaner/1.0',
-                        'Accept':        'application/json',
-                        'Content-Type':  'application/x-www-form-urlencoded',
-                        'Content-Length': str(len(body)),
-                    },
-                    method='POST'
-                )
-                with urllib.request.urlopen(req, timeout=OVERPASS_TIMEOUT_POST) as resp:
-                    data = resp.read()
-                self.send_response(200)
-                self.send_header('Content-Type', 'application/json')
-                self._cors()
-                self.end_headers()
-                self._safe_write(data)
-                return
-            except urllib.error.HTTPError as e:
-                last_err = f'{host}: HTTP {e.code}'
-                continue
-            except Exception as e:
-                last_err = f'{host}: {type(e).__name__}'
-                continue
-        self._json(502, {'error': f'Overpass nicht erreichbar ({last_err})'})
+        """POST-Variante für lange around-Abfragen (sprengen das URL-Längenlimit).
+        Alle Endpoints werden parallel angefragt (siehe _overpass_race)."""
+        data, err = _overpass_race(body=_overpass_raw_query(body),
+                                   timeout=OVERPASS_TIMEOUT_POST)
+        self._send_overpass(data, err)
 
     def _proxy_brouter(self):
         qs  = self.path[len('/api/brouter'):]
@@ -542,6 +618,18 @@ if __name__ == '__main__':
 
     class ThreadingHTTPServer(socketserver.ThreadingMixIn, http.server.HTTPServer):
         daemon_threads = True  # Threads sterben mit dem Server
+        # Auf IPv6 UND IPv4 lauschen. Lauscht der Server nur auf IPv4, während der
+        # aufrufende Client "localhost" zuerst zu ::1 (IPv6) auflöst, läuft JEDER
+        # Request erst in einen ~2 s langen Verbindungs-Timeout, bevor er auf IPv4
+        # zurückfällt — das machte die gesamte App zäh.
+        address_family = socket.AF_INET6
+        def server_bind(self):
+            # IPV6_V6ONLY explizit abschalten, damit IPv4-Clients weiter verbinden.
+            try:
+                self.socket.setsockopt(socket.IPPROTO_IPV6, socket.IPV6_V6ONLY, 0)
+            except OSError:
+                pass
+            super().server_bind()
         def handle_error(self, request, client_address):
             # Vom Client abgebrochene Verbindungen sind normal – kein Traceback.
             exc = sys.exc_info()[1]
@@ -549,7 +637,12 @@ if __name__ == '__main__':
                 return
             super().handle_error(request, client_address)
 
-    srv = ThreadingHTTPServer(('', PORT), Handler)
+    try:
+        srv = ThreadingHTTPServer(('::', PORT), Handler)
+    except OSError:
+        # Container/System ohne IPv6 — auf reines IPv4 zurückfallen
+        ThreadingHTTPServer.address_family = socket.AF_INET
+        srv = ThreadingHTTPServer(('', PORT), Handler)
     log(f'  ✓ Bereit: http://localhost:{PORT}/')
     with srv:
         try:
