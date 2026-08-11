@@ -272,6 +272,23 @@ header{background:var(--surface);border-bottom:1px solid var(--border);padding:9
 /* POI-Einstellungen (Zoom-Schwelle) */
 #poiSettingsPanel{position:absolute;top:12px;right:52px;background:rgba(18,22,32,.97);border:1px solid var(--border);border-radius:8px;padding:10px 12px;width:165px;z-index:1002;display:none;flex-direction:column;gap:6px;box-shadow:0 4px 16px rgba(0,0,0,.5)}
 #poiSettingsPanel.open{display:flex}
+/* ── OSM-Aktivitätsprotokoll ── */
+#osmLogPanel{position:absolute;bottom:12px;right:12px;width:310px;background:rgba(18,22,32,.97);border:1px solid var(--border);border-radius:8px;z-index:1002;display:none;flex-direction:column;box-shadow:0 4px 16px rgba(0,0,0,.5);overflow:hidden}
+#osmLogPanel.open{display:flex}
+.osmlog-head{display:flex;align-items:center;gap:6px;padding:8px 10px;border-bottom:1px solid var(--border);font-size:10px;text-transform:uppercase;letter-spacing:.05em;color:var(--accent);font-weight:600}
+.osmlog-head button{margin-left:auto;background:transparent;border:1px solid var(--border);color:var(--muted);border-radius:4px;padding:2px 6px;font-size:10px;cursor:pointer;font-family:'DM Sans',sans-serif;text-transform:none;letter-spacing:0}
+.osmlog-head button:hover{background:var(--surface2);color:var(--text)}
+.osmlog-head button+button{margin-left:0}
+#osmLogList{max-height:230px;overflow-y:auto;padding:4px}
+.osmlog-row{display:flex;align-items:baseline;gap:6px;padding:4px 6px;border-radius:4px;font-size:11px;line-height:1.35}
+.osmlog-row+.osmlog-row{margin-top:2px}
+.osmlog-row.run{background:rgba(61,142,255,.12)}
+.osmlog-row.ok{background:rgba(40,199,106,.10)}
+.osmlog-row.err{background:rgba(255,77,77,.12)}
+.osmlog-row.abort{background:rgba(255,255,255,.05)}
+.osmlog-lbl{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--text)}
+.osmlog-ms{font-family:'DM Mono',monospace;font-size:10px;color:var(--muted);white-space:nowrap}
+.osmlog-empty{padding:10px;font-size:11px;color:var(--muted);font-style:italic;text-align:center}
 .poi-set-lbl{font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.05em}
 .poi-set-val{font-family:'DM Mono',monospace;font-size:22px;font-weight:700;color:var(--accent);text-align:center;line-height:1}
 .poi-set-sub{font-size:9px;color:var(--muted);text-align:center}
@@ -311,7 +328,7 @@ header{background:var(--surface);border-bottom:1px solid var(--border);padding:9
 </head>
 <body>
 <header>
-  <div class="logo">🚴 Radreise Planer<span class="logo-ver">v1.9.5</span></div>
+  <div class="logo">🚴 Radreise Planer<span class="logo-ver">v1.9.6</span></div>
   <div class="stats">
     <div class="stat"><span class="sl">Route</span><span class="sv" id="hdrRoute" style="color:var(--muted)">–</span></div>
     <div class="stat"><span class="sl">Gesamt</span><span class="sv" id="hdrTotal" style="color:var(--muted)">–</span></div>
@@ -406,6 +423,16 @@ header{background:var(--surface);border-bottom:1px solid var(--border);padding:9
       <button class="map-btn" id="layerBtn" onclick="switchTileLayer()" title="Karte wechseln" style="font-size:11px;font-weight:700">🗺</button>
 
       <button class="map-btn" id="elevProfileBtn" onclick="toggleElevProfile()" title="Höhenprofil ein-/ausblenden" style="font-size:13px">⛰</button>
+      <button class="map-btn" id="osmLogBtn" onclick="toggleOsmLog()" title="OSM-Aktivität: laufende und beendete Abfragen" style="font-size:13px">🛰</button>
+    </div>
+    <!-- OSM-Aktivitätsprotokoll -->
+    <div id="osmLogPanel">
+      <div class="osmlog-head">
+        <span>🛰 OSM-Aktivität</span>
+        <button onclick="clearOsmLog()">Leeren</button>
+        <button onclick="toggleOsmLog()" title="Schließen">✕</button>
+      </div>
+      <div id="osmLogList"><div class="osmlog-empty">Noch keine Abfragen</div></div>
     </div>
     <!-- Ortssuche -->
     <div id="locationSearchOverlay">
@@ -2027,14 +2054,78 @@ async function dismissSegmentRefresh() {
 }
 
 let _overpassActive = 0;
-let _overpassAbortCtl = null; // globaler AbortController für laufende Abfragen
+// ALLE laufenden Abfragen, nicht nur die letzte. Vorher war das eine einzelne
+// Variable: startete eine zweite Abfrage, wurde der Controller der ersten
+// überschrieben — die war dann nicht mehr abbrechbar und lief im Hintergrund
+// weiter, was die OSM-Server unnötig belastete.
+const _overpassInflight = new Set();
 
 function abortOverpass() {
-  if (_overpassAbortCtl) { _overpassAbortCtl.abort(); _overpassAbortCtl = null; }
+  _overpassInflight.forEach(ctl => ctl.abort());
+  _overpassInflight.clear();
   _overpassActive = 0;
   _overpassHintHide(true);
   // Aktive POI-Layer leeren damit keine veralteten Marker bleiben
   _activePois.forEach(id => _poiLayers[id]?.clearLayers());
+}
+
+// ── OSM-Aktivitätsprotokoll ──────────────────────────────────────────────────
+const OSM_LOG_MAX = 40;
+let _osmLog = [];          // {label, t0, status, ms, n, msg}
+let _osmLogTimer = null;
+
+function toggleOsmLog() {
+  const el = document.getElementById('osmLogPanel');
+  const open = !el.classList.contains('open');
+  el.classList.toggle('open', open);
+  document.getElementById('osmLogBtn')?.classList.toggle('active', open);
+  if (open) _renderOsmLog();
+}
+
+function clearOsmLog() {
+  _osmLog = _osmLog.filter(e => e.status === 'run'); // Laufende behalten
+  _renderOsmLog();
+}
+
+function _osmLogStart(label) {
+  const entry = { label, t0: performance.now(), status: 'run' };
+  _osmLog.unshift(entry);
+  if (_osmLog.length > OSM_LOG_MAX) _osmLog.length = OSM_LOG_MAX;
+  _renderOsmLog();
+  // Laufzeit laufender Einträge live mitzählen
+  if (!_osmLogTimer) _osmLogTimer = setInterval(_renderOsmLog, 250);
+  return entry;
+}
+
+function _osmLogEnd(entry, status, info) {
+  if (!entry) return;
+  entry.status = status;                       // 'ok' | 'err' | 'abort'
+  entry.ms     = Math.round(performance.now() - entry.t0);
+  Object.assign(entry, info || {});
+  if (!_osmLog.some(e => e.status === 'run')) { clearInterval(_osmLogTimer); _osmLogTimer = null; }
+  _renderOsmLog();
+}
+
+function _renderOsmLog() {
+  const list = document.getElementById('osmLogList');
+  if (!list || !document.getElementById('osmLogPanel')?.classList.contains('open')) return;
+  if (!_osmLog.length) { list.innerHTML = '<div class="osmlog-empty">Noch keine Abfragen</div>'; return; }
+  const esc = s => String(s ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;');
+  list.innerHTML = _osmLog.map(e => {
+    const icon = e.status === 'run' ? '⏳' : e.status === 'ok' ? '✓' : e.status === 'abort' ? '⊘' : '✗';
+    const ms   = e.status === 'run' ? Math.round(performance.now() - e.t0) : e.ms;
+    const secs = ms >= 1000 ? (ms/1000).toFixed(1) + ' s' : ms + ' ms';
+    let right;
+    if (e.status === 'run')        right = secs + '…';
+    else if (e.status === 'ok')    right = `${e.n ?? '?'} Treffer · ${secs}${e.cached ? ' · Cache' : ''}`;
+    else if (e.status === 'abort') right = 'abgebrochen · ' + secs;
+    else                           right = esc(e.msg || 'Fehler') + ' · ' + secs;
+    return `<div class="osmlog-row ${e.status}">
+      <span>${icon}</span>
+      <span class="osmlog-lbl">${esc(e.label)}</span>
+      <span class="osmlog-ms">${esc(right)}</span>
+    </div>`;
+  }).join('');
 }
 
 let _overpassInfoTimer = null;
@@ -2061,10 +2152,16 @@ function _overpassHintHide(force = false) {
   if (el) el.classList.remove('visible');
 }
 
-async function overpassFetch(q, timeoutMs = OVERPASS_TIMEOUT){
+/**
+ * opts.signal — externes Abbruch-Signal (POI-Suche bricht damit eine überholte
+ *               Abfrage derselben Kategorie ab, statt sie weiterlaufen zu lassen)
+ * opts.label  — Beschriftung im OSM-Aktivitätsprotokoll
+ */
+async function overpassFetch(q, timeoutMs = OVERPASS_TIMEOUT, opts = {}){
+  const logEntry = _osmLogStart(opts.label || 'OSM-Abfrage');
   _overpassActive++;
-  _overpassAbortCtl = new AbortController();
-  const userAbortSig = _overpassAbortCtl.signal;
+  const ownCtl = new AbortController();
+  _overpassInflight.add(ownCtl);
   _overpassHintShow('OSM-Anfrage läuft…');
 
   // Kurze Queries (<600 Zeichen) via GET — funktioniert zuverlässig mit dem Proxy.
@@ -2074,10 +2171,11 @@ async function overpassFetch(q, timeoutMs = OVERPASS_TIMEOUT){
 
   const ctls = OVERPASS_ENDPOINTS.map(() => new AbortController());
 
-  // mkOpts(i): kombiniert User-Abort + Timeout + den per-Request-Ctl
+  // mkOpts(i): kombiniert eigenen Abort + externen Abort + Timeout + per-Request-Ctl
   // → wenn ein Request gewinnt, bricht ctls[i].abort() die anderen wirklich ab
   const mkOpts = (i) => {
-    const signals = [userAbortSig, AbortSignal.timeout(timeoutMs), ctls[i].signal];
+    const signals = [ownCtl.signal, AbortSignal.timeout(timeoutMs), ctls[i].signal];
+    if (opts.signal) signals.push(opts.signal);
     const signal  = typeof AbortSignal.any === 'function'
       ? AbortSignal.any(signals) : AbortSignal.timeout(timeoutMs);
     if (usePost) return {
@@ -2090,38 +2188,48 @@ async function overpassFetch(q, timeoutMs = OVERPASS_TIMEOUT){
   };
 
   try {
-    const data = await Promise.any(
+    const res = await Promise.any(
       OVERPASS_ENDPOINTS.map(async (ep, i) => {
         const r = await fetch(usePost ? ep : ep + param, mkOpts(i));
         if (!r.ok) throw new Error('HTTP ' + r.status);
         ctls.forEach((c, j) => { if (j !== i) c.abort(); }); // andere sofort abbrechen
-        return r.json();
+        // Server meldet über den Header, ob die Antwort aus seinem Cache kam
+        return { data: await r.json(), cached: r.headers.get('X-Overpass-Cache') === 'hit' };
       })
     ).catch(() => null);
 
-    if (data) return data;
+    if (res?.data) {
+      _osmLogEnd(logEntry, 'ok', { n: res.data.elements?.length ?? 0, cached: res.cached });
+      return res.data;
+    }
 
-    // Fallback: CORS-Proxy (GET)
-    _overpassHintShow('Overpass – CORS-Proxy…');
-    try {
-      const r = await fetch('https://corsproxy.io/?' + encodeURIComponent(OVERPASS_ENDPOINTS[0] + param),
-        {signal: AbortSignal.timeout(timeoutMs)});
-      if (r.ok) return await r.json();
-    } catch {}
+    // Überholt/abgebrochen? Dann ist das kein Fehler, sondern gewollt.
+    if (opts.signal?.aborted || ownCtl.signal.aborted) {
+      _osmLogEnd(logEntry, 'abort');
+      throw new DOMException('Abfrage abgebrochen', 'AbortError');
+    }
 
-    if (location.protocol === 'file:')
+    // Kein CORS-Proxy-Fallback mehr: der serverseitige Proxy fragt bereits drei
+    // echte Overpass-Server parallel an. Der frühere Fallback hängte zudem den
+    // relativen Pfad '/api/overpass' an corsproxy.io an — das ergab eine
+    // sinnlose URL, die nur eine CORS-Fehlermeldung in der Konsole produzierte.
+    if (location.protocol === 'file:') {
+      _osmLogEnd(logEntry, 'err', { msg: 'file:// — lokalen Server nutzen' });
       throw new Error('Datei als file:// geöffnet – bitte über lokalem Server öffnen:\npython -m http.server 3000\n→ http://localhost:3000/radreise_planer.html');
+    }
+    _osmLogEnd(logEntry, 'err', { msg: 'nicht erreichbar' });
     throw new Error('Overpass (OSM-Datenbank) nicht erreichbar – evtl. Wartung oder Überlastung. Die Karte funktioniert, nur die POI-/Camping-Suche ist betroffen. Bitte später erneut versuchen.');
   } finally {
     _overpassActive--;
-    _overpassAbortCtl = null;
+    _overpassInflight.delete(ownCtl);
     _overpassHintHide();
   }
 }
 
 async function overpassSearch(lat, lon, radiusM=15000){
   const q=`[out:json][timeout:30];(node["tourism"="camp_site"](around:${radiusM},${lat},${lon});way["tourism"="camp_site"](around:${radiusM},${lat},${lon});node["tourism"="caravan_site"](around:${radiusM},${lat},${lon});way["tourism"="caravan_site"](around:${radiusM},${lat},${lon}););out center tags;`;
-  const data=await overpassFetch(q);
+  const data=await overpassFetch(q, OVERPASS_TIMEOUT,
+    { label: `⛺ Campingplätze (${Math.round(radiusM/1000)} km)` });
 
   return data.elements.map(el=>{
     const elLat=el.lat??el.center?.lat;
@@ -5007,6 +5115,19 @@ function _schedulePoiRefresh(delay = 350) {
   _poiTimer = setTimeout(() => { _activePois.forEach(id => _fetchPoiCat(id)); }, delay);
 }
 
+// Laufende POI-Abfrage je Kategorie. Beim Verschieben/Zoomen wird die vorherige
+// Abfrage derselben Kategorie abgebrochen — sonst stapeln sich die Anfragen
+// (jedes Pan startete eine weitere), die OSM-Server drosseln daraufhin und
+// alles wird spürbar langsam ("erst schnell, dann zäh").
+const _poiInflight = {};
+
+function _poiNewSignal(id) {
+  _poiInflight[id]?.abort();
+  const ctl = new AbortController();
+  _poiInflight[id] = ctl;
+  return ctl.signal;
+}
+
 // Bereits hinzugefügte OSM-IDs pro Kategorie — verhindert Duplikate beim Scrollen
 const _poiSeenIds = {};
 
@@ -5081,7 +5202,8 @@ async function _fetchPoiCat(id) {
     let elements = _poiCache[ckey];
     if (!elements) {
       const q = `[out:json][timeout:20];${cat.query(bbox)}${outClause}`;
-      const data = await overpassFetch(q);
+      const data = await overpassFetch(q, OVERPASS_TIMEOUT,
+        { signal: _poiNewSignal(id), label: `${cat.icon} ${cat.label} (Karte)` });
       elements = data.elements || [];
       _poiCache[ckey] = elements;
       const keys = Object.keys(_poiCache);
@@ -5091,6 +5213,7 @@ async function _fetchPoiCat(id) {
     if (elements.length === 0)
       _overpassHintShow(`${cat.icon} ${cat.label}: keine im aktuellen Bereich`, 3500);
   } catch(err) {
+    if (err?.name === 'AbortError') return;   // durch neueres Pan/Zoom überholt
     console.warn('POI fetch:', err);
     _overpassHintShow(`⚠ ${cat.icon} ${cat.label}: Overpass nicht erreichbar (Wartung/Überlastung?) — Karte läuft, später erneut versuchen`, 5000);
   }
@@ -5136,7 +5259,8 @@ async function _fetchPoiCatRoute(id, cat) {
       const pts    = visPts.filter((_, i) => i % step === 0);
       const arnd   = `around:${_poiRouteKm * 1000},${pts.map(p => `${p[0]},${p[1]}`).join(',')}`;
       const q = `[out:json][timeout:25];${cat.query(arnd)}${outClause}`;
-      const data = await overpassFetch(q); // normale 30s genügen
+      const data = await overpassFetch(q, OVERPASS_TIMEOUT, // normale 30s genügen
+        { signal: _poiNewSignal(id), label: `${cat.icon} ${cat.label} (Strecke)` });
       elements = data?.elements || [];
       _poiCache[ckey] = elements;
       const keys = Object.keys(_poiCache);
@@ -5146,6 +5270,7 @@ async function _fetchPoiCatRoute(id, cat) {
     if (elements.length === 0)
       _overpassHintShow(`${cat.icon} ${cat.label}: keine innerhalb ${_poiRouteKm} km der Strecke`, 3500);
   } catch(err) {
+    if (err?.name === 'AbortError') return;   // durch neueres Pan/Zoom überholt
     console.warn('POI route fetch:', err);
     _overpassHintShow('⚠ Strecken-POI-Abfrage fehlgeschlagen', 3000);
   }

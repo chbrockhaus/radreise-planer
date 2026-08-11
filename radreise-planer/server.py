@@ -274,7 +274,7 @@ def _overpass_race(qs='', body=None, timeout=OVERPASS_TIMEOUT):
     ckey = body if body is not None else qs
     cached = _overpass_cache_get(ckey)
     if cached is not None:
-        return cached, None
+        return cached, 'CACHE'   # Sonderfall: kein Fehler, sondern Cache-Treffer
 
     futures = {_OVERPASS_POOL.submit(_overpass_fetch_one, ep, qs, body, timeout): ep
                for ep in OVERPASS_ENDPOINTS}
@@ -519,12 +519,14 @@ class Handler(http.server.SimpleHTTPRequestHandler):
 
     # ── Overpass-Proxy ────────────────────────────────────────────────────────
     def _send_overpass(self, data, err):
-        """Gemeinsame Antwort für GET- und POST-Variante."""
+        """Gemeinsame Antwort für GET- und POST-Variante.
+        err == 'CACHE' bedeutet Erfolg aus dem Zwischenspeicher."""
         if data is None:
             self._json(502, {'error': f'Overpass nicht erreichbar ({err})'})
             return
         self.send_response(200)
         self.send_header('Content-Type', 'application/json')
+        self.send_header('X-Overpass-Cache', 'hit' if err == 'CACHE' else 'miss')
         self._cors()
         self.end_headers()
         self._safe_write(data)

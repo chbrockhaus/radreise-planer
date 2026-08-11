@@ -1,5 +1,10 @@
 # Changelog — Radreise Planer
 
+## v1.9.6 (2026-08-11)
+- **Fix: „Erst schnell, danach viel zu langsam".** Wurde die Karte verschoben oder gezoomt, während eine OSM-Abfrage lief, startete die App zusätzliche Abfragen, ohne die alten abzubrechen — bei mehrmaligem Verschieben stapelten sich die Anfragen. Die öffentlichen OSM-Server drosseln daraufhin, wodurch alles Folgende zäh wurde. Jetzt wird eine überholte Abfrage derselben Kategorie sofort abgebrochen (gemessen: nach 50–500 ms statt bis zum Ende). Zusätzlich behoben: es wurde nur die jeweils letzte Abfrage als abbrechbar vermerkt, ältere liefen unkontrolliert weiter.
+- **Neu: OSM-Aktivitätsprotokoll** (🛰-Schaltfläche bei den Kartensteuerelementen). Zeigt laufende Abfragen mit mitlaufender Dauer sowie beendete mit Ergebnis: Trefferzahl, Dauer, ob die Antwort aus dem Zwischenspeicher kam, abgebrochen oder fehlgeschlagen. Damit ist nachvollziehbar, was im Hintergrund passiert.
+- Aufgeräumt: Der Notfall-Umweg über einen fremden CORS-Proxy wurde entfernt. Seit die Abfragen über den eigenen Server laufen, baute er nur noch eine unsinnige Adresse zusammen und erzeugte Fehlermeldungen in der Browser-Konsole.
+
 ## v1.9.5 (2026-08-11)
 - **Fix: App war insgesamt zäh — jeder einzelne Server-Aufruf kostete ~2 Sekunden.** Der Server lauschte nur auf IPv4, während `localhost` zuerst zu IPv6 (`::1`) aufgelöst wird. Dadurch lief JEDER Aufruf (Kartenkacheln, Routing, POI-Suche, Speichern) erst in einen ~2-Sekunden-Verbindungs-Timeout, bevor er auf IPv4 zurückfiel. Gemessen: 2,057 s → 0,019 s pro Aufruf. Der Server lauscht jetzt gleichzeitig auf IPv6 und IPv4.
 - **Fix: OSM-Abfragen probierten die Server nacheinander durch statt gleichzeitig.** Der erste Server in der Liste (overpass-api.de) ist regelmäßig überlastet (gemessen ~23 s), ein weiterer war gar nicht erreichbar — deren Timeouts summierten sich, bevor die schnellen Server (~2–3 s) überhaupt gefragt wurden. Jetzt werden alle gleichzeitig angefragt, die erste Antwort gewinnt. Der dauerhaft nicht erreichbare Server wurde entfernt.
