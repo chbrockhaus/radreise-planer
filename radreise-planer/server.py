@@ -196,10 +196,10 @@ def delete_tour(tid):
 # lambert dieselbe Abfrage in 0,53 s beantwortete). Doppelt gezählt wird dadurch
 # nichts — die Slots hängen an der IP, nicht am Namen (siehe _ep_key).
 OVERPASS_ENDPOINTS = [
+    'https://overpass.kumi.systems/api/interpreter',      # erste Wahl (nutzt auch brouter-web)
     'https://lambert.openstreetmap.de/api/interpreter',   # OSM-DE Server B
     'https://gall.openstreetmap.de/api/interpreter',      # OSM-DE Server A
-    'https://overpass.private.coffee/api/interpreter',    # eigene Maschine …
-    'https://overpass.kumi.systems/api/interpreter',      # … dieselbe wie private.coffee
+    'https://overpass.private.coffee/api/interpreter',    # dieselbe Maschine wie kumi.systems
     'https://overpass-api.de/api/interpreter',            # Lastverteiler auf A/B
 ]
 
@@ -219,7 +219,8 @@ OVERPASS_MAX_TRIES = 3
 # eine einzige Anfrage statt drei — ein Drittel der Last, keine Nachzügler.
 OVERPASS_STAGGER  = 2.5   # Sekunden bis zusätzlich der nächste Endpoint startet
 OVERPASS_HOST_MAX = 2     # gleichzeitige Anfragen je Endpoint ("Rate limit: 2")
-OVERPASS_COOLDOWN = 90    # Sekunden, die ein Endpoint nach einem Fehler hintenansteht
+OVERPASS_COOLDOWN     = 90    # Sekunden, die ein Endpoint nach einem Fehler hintenansteht
+OVERPASS_COOLDOWN_MAX = 900   # … verdoppelt sich bei jedem weiteren Fehler bis hierhin
 
 _OVERPASS_POOL = concurrent.futures.ThreadPoolExecutor(
     max_workers=32, thread_name_prefix='overpass')
@@ -255,7 +256,7 @@ def _ep_key(ep):
 
 
 def _slot(key):
-    return _slots.setdefault(key, {'inflight': 0, 'cool_until': 0.0})
+    return _slots.setdefault(key, {'inflight': 0, 'cool_until': 0.0, 'fails': 0})
 
 
 def _ep_order():
@@ -288,8 +289,14 @@ def _ep_release(ep, secs=None):
         st = _slot(key)
         st['inflight'] = max(0, st['inflight'] - 1)
         if secs is None:
-            st['cool_until'] = time.time() + OVERPASS_COOLDOWN
+            # Sperre verdoppelt sich bei jedem weiteren Fehlschlag: ein Server, der
+            # dauerhaft nicht antwortet, kostet dann nicht alle 90 s erneut einen
+            # Anlauf, bleibt aber erste Wahl, sobald er wieder da ist.
+            st['fails'] = st.get('fails', 0) + 1
+            st['cool_until'] = time.time() + min(
+                OVERPASS_COOLDOWN * 2 ** (st['fails'] - 1), OVERPASS_COOLDOWN_MAX)
         else:
+            st['fails'] = 0
             prev = _ep_avg.get(ep)
             _ep_avg[ep] = secs if prev is None else 0.7 * prev + 0.3 * secs
             st['cool_until'] = 0.0

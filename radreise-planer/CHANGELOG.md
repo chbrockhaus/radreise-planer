@@ -1,5 +1,9 @@
 # Changelog — Radreise Planer
 
+## v1.10.0 (2026-08-11)
+- **`overpass.kumi.systems` ist wieder erste Wahl** (derselbe Server, den auch BRouter-Web benutzt). Die übrigen Server bleiben als Rückfall dahinter.
+- **Neu: Die Sperre für einen ausgefallenen Server verdoppelt sich** bei jedem weiteren Fehlversuch (90 s, 3 min, 6 min … bis 15 min), statt immer nach 90 Sekunden erneut anzulaufen. Ein Server, der längere Zeit nicht antwortet, kostet dadurch nur noch selten Wartezeit — sobald er wieder da ist, ist er sofort wieder erste Wahl.
+
 ## v1.9.9 (2026-08-11)
 - **Fix: OSM-Abfragen waren weiterhin zeitweise langsam und brachen ab.** Ursache waren gleich mehrere Punkte, die sich gegenseitig verstärkt haben. Zum Vergleich wurde angesehen, wie es BRouter-Web macht (es nutzt die Bibliothek `overpass-frontend`) — die entscheidenden Prinzipien von dort sind jetzt übernommen:
   - **Alle POI-Kategorien kommen in eine gemeinsame Abfrage.** Bisher löste jede aktive Kategorie eine eigene Abfrage aus, alle gleichzeitig — bei acht Kategorien also acht Abfragen, obwohl die OSM-Server nur zwei gleichzeitig erlauben. Der Rest wurde ohne Antwort in deren Warteschlange gestellt und lief bei uns in die Zeitüberschreitung. Jetzt: höchstens vier Kategorien je Abfrage, die Treffer werden anschließend anhand ihrer Merkmale wieder den Kategorien zugeordnet. Gemessen: acht Kategorien entlang der Strecke = 2 Abfragen statt 8.
