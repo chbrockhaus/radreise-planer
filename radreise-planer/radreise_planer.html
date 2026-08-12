@@ -351,7 +351,7 @@ header{background:var(--surface);border-bottom:1px solid var(--border);padding:9
 </head>
 <body>
 <header>
-  <div class="logo">🚴 Radreise Planer<span class="logo-ver">v1.10.9</span></div>
+  <div class="logo">🚴 Radreise Planer<span class="logo-ver">v1.11.0</span></div>
   <div class="stats">
     <div class="stat"><span class="sl">Route</span><span class="sv" id="hdrRoute" style="color:var(--muted)">–</span></div>
     <div class="stat"><span class="sl">Gesamt</span><span class="sv" id="hdrTotal" style="color:var(--muted)">–</span></div>
@@ -5028,7 +5028,22 @@ async function applyReroute() {
 // ROUTE BEARBEITEN — Wegpunkte auf Routenlinie setzen, verschieben, löschen
 // ─────────────────────────────────────────────────────────────────────────────
 
-const ROUTE_EDIT_LOCAL_KM = 5;
+const ROUTE_EDIT_LOCAL_KM = 5;     // Obergrenze des neu berechneten Fensters
+const ROUTE_EDIT_MIN_KM   = 0.6;   // Untergrenze — BRouter braucht etwas Anlauf
+
+/**
+ * Wie viel Strecke vor und hinter einem Wegpunkt neu berechnet werden muss.
+ * Nur so viel wie nötig: BRouter braucht Platz, um von der Strecke zum Wegpunkt
+ * und wieder zurück zu kommen — etwa das Dreifache seines Abstands zur Route.
+ * Vorher war das Fenster fest ±5 km: Ein Wegpunkt 200 m neben der Strecke warf
+ * dadurch 9 km der aufgezeichneten Route weg und ersetzte sie durch BRouters
+ * eigene Linie (gemessen bis 370 m Abweichung weit weg vom Wegpunkt) — genau
+ * das sah aus wie „die App setzt sich eigene Zwischenwegpunkte".
+ */
+function routeEditWindowKm(lat, lon, nearIdx) {
+  const d = hav(lat, lon, ROUTE_PTS[nearIdx][0], ROUTE_PTS[nearIdx][1]);
+  return Math.min(ROUTE_EDIT_LOCAL_KM, Math.max(ROUTE_EDIT_MIN_KM, d * 3));
+}
 
 function _refreshRouteEditView() {
   updateHeaderStats();
@@ -5132,9 +5147,9 @@ async function _insertRouteWp(lat, lon) {
   const anchorFrom = anchorIdxs[insertAt];
   const anchorTo   = anchorIdxs[insertAt + 1];
 
-  // Limit splice to ±ROUTE_EDIT_LOCAL_KM around the click — prevents rerouting the whole route
-  // when no intermediate waypoints exist yet (anchorFrom=0, anchorTo=last).
-  const LOCAL_KM = ROUTE_EDIT_LOCAL_KM;
+  // Nur den nötigen Abschnitt um den Klick neu berechnen — sonst würde ohne
+  // weitere Wegpunkte die ganze Route neu gerechnet (anchorFrom=0, anchorTo=last).
+  const LOCAL_KM = routeEditWindowKm(lat, lon, clickIdx);
   const clickKm  = routeCumDist[clickIdx];
   const fromKm   = Math.max(routeCumDist[anchorFrom], clickKm - LOCAL_KM);
   const toKm     = Math.min(routeCumDist[anchorTo],   clickKm + LOCAL_KM);
@@ -5143,6 +5158,15 @@ async function _insertRouteWp(lat, lon) {
 
   const prev     = routeEditWps.map(w => w.slice());
   const prevOrig = routeEditOrig.slice();
+
+  // Überlappt das neue Fenster die gemerkte Originalstrecke eines anderen
+  // Wegpunkts, ist dessen Erinnerung nicht mehr brauchbar (sie enthielte jetzt
+  // den Umweg des neuen Wegpunkts) — dort dann lieber neu rechnen.
+  routeEditOrig.forEach((o, k) => {
+    const s = _origSegSlot(o);
+    if (s && fromIdx <= s[1] && toIdx >= s[0]) routeEditOrig[k] = null;
+  });
+
   routeEditWps.splice(insertAt, 0, [lat, lon]);
   // Die Strecke, die dieser Wegpunkt gleich ersetzt, für sein Entfernen merken
   routeEditOrig.splice(insertAt, 0, {
@@ -5172,6 +5196,28 @@ function _origSegSlot(orig) {
   if (hav(first[0], first[1], ROUTE_PTS[a][0], ROUTE_PTS[a][1]) > WP_ORIG_SNAP_KM) return null;
   if (hav(last[0],  last[1],  ROUTE_PTS[b][0], ROUTE_PTS[b][1]) > WP_ORIG_SNAP_KM) return null;
   return [a, b];
+}
+
+/**
+ * Gemerkte Originalstrecke auf das Fenster [fromIdx..toIdx] ausdehnen.
+ * Außerhalb des bisher gemerkten Bereichs [a..b] ist die aktuelle Route noch
+ * unverändert, ihre Punkte sind dort also selbst das Original und können vorn
+ * bzw. hinten angesetzt werden. Liefert null, wenn die gemerkte Strecke nicht
+ * mehr auf die Route passt (dann wird beim Entfernen neu gerechnet).
+ */
+function _widenOrigSeg(orig, fromIdx, toIdx) {
+  const slot = _origSegSlot(orig);
+  if (!slot) return null;
+  const [a, b] = slot;
+  if (fromIdx >= a && toIdx <= b) return orig;          // Fenster liegt schon drin
+  const lo = Math.min(fromIdx, a), hi = Math.max(toIdx, b);
+  const hasEle = orig.eles?.length === orig.pts.length && ROUTE_ELEVATIONS.length === ROUTE_PTS.length;
+  return {
+    pts: [...ROUTE_PTS.slice(lo, a), ...orig.pts, ...ROUTE_PTS.slice(b + 1, hi + 1)],
+    eles: hasEle
+      ? [...ROUTE_ELEVATIONS.slice(lo, a), ...orig.eles, ...ROUTE_ELEVATIONS.slice(b + 1, hi + 1)]
+      : []
+  };
 }
 
 // Local segment reroute: only recalculates ROUTE_PTS[fromIdx..toIdx], preserving all
@@ -5297,7 +5343,6 @@ function drawRouteEditMarkers() {
     m.bindTooltip('Wegpunkt · Klick zum Entfernen · Ziehen zum Verschieben',
       { direction: 'top', offset: [0, -10] });
 
-    const LOCAL_KM = ROUTE_EDIT_LOCAL_KM;
     let dragPrev = null, dragPrevOrig = null;
     let justDragged = false;   // Leaflet feuert nach dem Ziehen noch ein click
     m.on('dragstart', () => {
@@ -5314,16 +5359,17 @@ function drawRouteEditMarkers() {
       const prevAnchorIdx = aidxs[wi];
       const nextAnchorIdx = aidxs[wi + 2];
       const newPosIdx = nearestRoutePt(newPos[0], newPos[1], 0, ROUTE_PTS.length - 1);
+      const LOCAL_KM  = routeEditWindowKm(newPos[0], newPos[1], newPosIdx);
       const newPosKm  = routeCumDist[newPosIdx];
       const fromKm    = Math.max(routeCumDist[prevAnchorIdx], newPosKm - LOCAL_KM);
       const toKm      = Math.min(routeCumDist[nextAnchorIdx], newPosKm + LOCAL_KM);
       const fromIdx   = routeIdxAtKm(fromKm);
       const toIdx     = routeIdxAtKm(toKm);
-      // Die gemerkte Originalstrecke bleibt nur gültig, wenn das neu zu
-      // berechnende Fenster komplett darin liegt — sonst bliebe beim späteren
-      // Entfernen ein Rest der alten Abweichung stehen.
-      const slot = _origSegSlot(routeEditOrig[wi]);
-      if (!slot || fromIdx < slot[0] || toIdx > slot[1]) routeEditOrig[wi] = null;
+      // Reicht das neue Fenster über die gemerkte Originalstrecke hinaus, wird
+      // sie erweitert: außerhalb des bisherigen Bereichs ist die aktuelle Route
+      // ja noch das Original. Ohne das bliebe beim Entfernen ein Rest der alten
+      // Abweichung stehen.
+      routeEditOrig[wi] = _widenOrigSeg(routeEditOrig[wi], fromIdx, toIdx);
       await _rerouteAndSplice(
         fromIdx, toIdx,
         [ROUTE_PTS[fromIdx], newPos, ROUTE_PTS[toIdx]],
