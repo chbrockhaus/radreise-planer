@@ -351,7 +351,7 @@ header{background:var(--surface);border-bottom:1px solid var(--border);padding:9
 </head>
 <body>
 <header>
-  <div class="logo">🚴 Radreise Planer<span class="logo-ver">v1.10.7</span></div>
+  <div class="logo">🚴 Radreise Planer<span class="logo-ver">v1.10.8</span></div>
   <div class="stats">
     <div class="stat"><span class="sl">Route</span><span class="sv" id="hdrRoute" style="color:var(--muted)">–</span></div>
     <div class="stat"><span class="sl">Gesamt</span><span class="sv" id="hdrTotal" style="color:var(--muted)">–</span></div>
@@ -553,7 +553,7 @@ header{background:var(--surface);border-bottom:1px solid var(--border);padding:9
     </div>
     <!-- Route-Edit Toolbar -->
     <div id="routeEditBar" style="display:none;position:absolute;top:12px;left:52px;z-index:1001;background:rgba(24,28,36,.94);border:1px solid var(--border);border-radius:6px;padding:6px 10px;align-items:center;gap:8px;white-space:nowrap">
-      <span style="font-size:10px;color:var(--muted)">Klick auf Karte → Wegpunkt</span>
+      <span style="font-size:10px;color:var(--muted)">Klick auf Karte → Wegpunkt · Klick auf Wegpunkt → entfernen</span>
       <button id="routeEditUndoBtn" onclick="undoRouteEdit()" disabled
         style="font-size:10px;font-weight:600;background:transparent;color:var(--muted);border:1px solid var(--border);border-radius:4px;padding:3px 8px;cursor:pointer;font-family:'DM Sans',sans-serif;transition:all .2s">↩ Rückgängig</button>
       <button id="routeEditRedoBtn" onclick="redoRouteEdit()" disabled
@@ -5230,6 +5230,7 @@ async function _rerouteAndSplice(fromIdx, toIdx, brouterWps, prevWps) {
     _refreshRouteEditView();
     if (statusEl) statusEl.textContent = '';
     _syncHistoryBtns();
+    await saveRouteData();   // Wegpunkt setzen/verschieben/entfernen soll bleiben
 
   } catch (e) {
     if (prevWps !== undefined) routeEditWps = prevWps;
@@ -5256,12 +5257,15 @@ function drawRouteEditMarkers() {
     });
     const m = L.marker([wp[0], wp[1]], { icon, draggable: true, zIndexOffset: 900 });
     m.addTo(leafletMap);
-    m.bindTooltip('Wegpunkt · Doppelklick zum Löschen', { direction: 'top', offset: [0, -10] });
+    m.bindTooltip('Wegpunkt · Klick zum Entfernen · Ziehen zum Verschieben',
+      { direction: 'top', offset: [0, -10] });
 
     const LOCAL_KM = ROUTE_EDIT_LOCAL_KM;
     let dragPrev = null;
+    let justDragged = false;   // Leaflet feuert nach dem Ziehen noch ein click
     m.on('dragstart', () => {
       dragPrev = routeEditWps.map(w => w.slice());
+      justDragged = true;
     });
     m.on('drag', e => { routeEditWps[wi] = [e.latlng.lat, e.latlng.lng]; });
     m.on('dragend', async () => {
@@ -5282,29 +5286,42 @@ function drawRouteEditMarkers() {
         [ROUTE_PTS[fromIdx], newPos, ROUTE_PTS[toIdx]],
         dragPrev
       );
+      setTimeout(() => { justDragged = false; }, 0);
     });
-    m.on('dblclick', async e => {
-      L.DomEvent.stopPropagation(e);
-      const ancs  = [routeEditStart, ...routeEditWps, routeEditEnd];
-      const aidxs = ancs.map(pt => nearestRoutePt(pt[0], pt[1], 0, ROUTE_PTS.length - 1));
-      const prevAnchorIdx = aidxs[wi];
-      const nextAnchorIdx = aidxs[wi + 2];
-      const wpIdx  = aidxs[wi + 1]; // route index of the waypoint being deleted
-      const wpKm   = routeCumDist[wpIdx];
-      const fromKm = Math.max(routeCumDist[prevAnchorIdx], wpKm - LOCAL_KM);
-      const toKm   = Math.min(routeCumDist[nextAnchorIdx], wpKm + LOCAL_KM);
-      const idxFrom = routeIdxAtKm(fromKm);
-      const idxTo   = routeIdxAtKm(toKm);
-      const prev = routeEditWps.map(w => w.slice());
-      routeEditWps.splice(wi, 1);
-      await _rerouteAndSplice(
-        idxFrom, idxTo,
-        [ROUTE_PTS[idxFrom], ROUTE_PTS[idxTo]],
-        prev
-      );
+    m.on('click', async e => {
+      L.DomEvent.stopPropagation(e);   // sonst setzt der Kartenklick gleich einen neuen
+      if (justDragged) { justDragged = false; return; }
+      await deleteRouteWp(wi);
     });
     routeEditMarkers.push(m);
   });
+}
+
+/**
+ * Wegpunkt entfernen und den Abschnitt zwischen den beiden Nachbar-Wegpunkten
+ * (höchstens ±ROUTE_EDIT_LOCAL_KM um den entfernten Punkt) neu berechnen.
+ * Rückgängig geht über „↩ Rückgängig" in der Bearbeiten-Leiste.
+ */
+async function deleteRouteWp(wi) {
+  if (routeEditRouting || !routeEditWps[wi]) return;
+  const LOCAL_KM = ROUTE_EDIT_LOCAL_KM;
+  const ancs  = [routeEditStart, ...routeEditWps, routeEditEnd];
+  const aidxs = ancs.map(pt => nearestRoutePt(pt[0], pt[1], 0, ROUTE_PTS.length - 1));
+  const prevAnchorIdx = aidxs[wi];
+  const nextAnchorIdx = aidxs[wi + 2];
+  const wpIdx  = aidxs[wi + 1];   // Routenindex des Wegpunkts, der weg soll
+  const wpKm   = routeCumDist[wpIdx];
+  const fromKm = Math.max(routeCumDist[prevAnchorIdx], wpKm - LOCAL_KM);
+  const toKm   = Math.min(routeCumDist[nextAnchorIdx], wpKm + LOCAL_KM);
+  const idxFrom = routeIdxAtKm(fromKm);
+  const idxTo   = routeIdxAtKm(toKm);
+  const prev = routeEditWps.map(w => w.slice());
+  routeEditWps.splice(wi, 1);
+  await _rerouteAndSplice(
+    idxFrom, idxTo,
+    [ROUTE_PTS[idxFrom], ROUTE_PTS[idxTo]],
+    prev
+  );
 }
 
 function clearRouteEditMarkers() {
