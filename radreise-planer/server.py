@@ -188,19 +188,21 @@ def delete_tour(tid):
     return False
 
 # ── Overpass: gestaffelt statt alle gleichzeitig ──────────────────────────────
-# Startreihenfolge wird zur Laufzeit nach gemessener Antwortzeit sortiert
-# (siehe _ep_order) — diese Liste gibt nur die Kandidaten vor.
-# gall/lambert sind die beiden ECHTEN Server hinter overpass-api.de. Sie stehen
-# hier extra drin, weil der Lastverteiler overpass-api.de zeitweise auf einen
-# überlasteten Knoten schickt (gemessen 2026-08: overpass-api.de HTTP 504, während
-# lambert dieselbe Abfrage in 0,53 s beantwortete). Doppelt gezählt wird dadurch
-# nichts — die Slots hängen an der IP, nicht am Namen (siehe _ep_key).
+# GENAU EIN Name je Maschine — die Startreihenfolge sortiert dann zur Laufzeit
+# nach gemessener Antwortzeit (siehe _ep_order).
+# Nicht in der Liste, mit Absicht:
+#   • overpass.private.coffee — derselbe Rechner wie kumi.systems (193.219.97.30)
+#   • overpass-api.de — nur der Lastverteiler vor gall und lambert, die hier
+#     direkt stehen. Ihn zusätzlich zu fragen ist sogar schlechter: er schickt
+#     zeitweise auf einen überlasteten Knoten (gemessen 2026-08: HTTP 504,
+#     während lambert dieselbe Abfrage in 0,53 s beantwortete).
+# Zwei Namen derselben Maschine würden Versuche verschwenden: ein Rennen hat nur
+# OVERPASS_MAX_TRIES Anläufe und könnte zwei davon an denselben toten Rechner
+# schicken. Gegen versehentliche Dopplung (DNS ändert sich) entdoppelt _ep_order.
 OVERPASS_ENDPOINTS = [
     'https://overpass.kumi.systems/api/interpreter',      # erste Wahl (nutzt auch brouter-web)
-    'https://lambert.openstreetmap.de/api/interpreter',   # OSM-DE Server B
-    'https://gall.openstreetmap.de/api/interpreter',      # OSM-DE Server A
-    'https://overpass.private.coffee/api/interpreter',    # dieselbe Maschine wie kumi.systems
-    'https://overpass-api.de/api/interpreter',            # Lastverteiler auf A/B
+    'https://lambert.openstreetmap.de/api/interpreter',   # OSM-DE, Rechner 1
+    'https://gall.openstreetmap.de/api/interpreter',      # OSM-DE, Rechner 2
 ]
 
 # Mehr als drei Versuche pro Abfrage bringen nichts und würden nur das Zeitbudget
@@ -260,15 +262,28 @@ def _slot(key):
 
 
 def _ep_order():
-    """Endpoints nach Erfolgsaussicht: nicht gesperrt, wenig belegt, schnell."""
+    """Endpoints nach Erfolgsaussicht: nicht gesperrt, wenig belegt, schnell —
+    und höchstens EINER je Maschine.
+
+    Die Entdopplung ist wichtig, falls doch einmal zwei Namen auf denselben
+    Rechner zeigen (DNS kann sich ändern, overpass-api.de verteilt z. B. auf
+    gall UND lambert): sonst könnte ein Rennen zwei seiner drei Versuche an
+    dieselbe — womöglich gerade tote — Maschine schicken."""
     keys = {ep: _ep_key(ep) for ep in OVERPASS_ENDPOINTS}   # ggf. DNS, ohne Lock
     now  = time.time()
     with _ep_lock:
-        return sorted(OVERPASS_ENDPOINTS, key=lambda ep: (
+        sortiert = sorted(OVERPASS_ENDPOINTS, key=lambda ep: (
             _slot(keys[ep])['cool_until'] > now,
             _slot(keys[ep])['inflight'],
             _ep_avg.get(ep) if _ep_avg.get(ep) is not None else 5.0,
         ))
+    gesehen, aus = set(), []
+    for ep in sortiert:
+        if keys[ep] in gesehen:
+            continue
+        gesehen.add(keys[ep])
+        aus.append(ep)
+    return aus
 
 
 def _ep_reserve(ep):
