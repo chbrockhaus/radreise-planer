@@ -351,7 +351,7 @@ header{background:var(--surface);border-bottom:1px solid var(--border);padding:9
 </head>
 <body>
 <header>
-  <div class="logo">🚴 Radreise Planer<span class="logo-ver">v1.10.6</span></div>
+  <div class="logo">🚴 Radreise Planer<span class="logo-ver">v1.10.7</span></div>
   <div class="stats">
     <div class="stat"><span class="sl">Route</span><span class="sv" id="hdrRoute" style="color:var(--muted)">–</span></div>
     <div class="stat"><span class="sl">Gesamt</span><span class="sv" id="hdrTotal" style="color:var(--muted)">–</span></div>
@@ -2611,6 +2611,129 @@ function subsampleRangeForReroute(startIdx, endIdx, intervalKm = 8, maxPts = 60)
   return subsamplePts(ROUTE_PTS.slice(startIdx, endIdx + 1), count);
 }
 
+// Vom Nutzer im Bearbeiten-Modus gesetzte Route-Wegpunkte (routeEditWps) als
+// FESTE Zwischenziele in die Wegpunktliste eines Abschnitts einbauen. Ohne das
+// werden sie beim Neuberechnen einfach überfahren, weil die 8-km-Stichprobe sie
+// nur zufällig trifft — der lila Punkt bleibt dann neben der Route liegen.
+// `hard` = [{idx, pt}, …] nach idx sortiert (siehe applyReroute).
+// Rückgabe enthält Start- UND Endpunkt des Abschnitts.
+function rerouteWaypoints(startIdx, endIdx, hard) {
+  const out = [];
+  let s = startIdx;
+  for (const h of (hard || [])) {
+    if (h.idx <= s || h.idx >= endIdx) continue;
+    const sub = subsampleRangeForReroute(s, h.idx);
+    sub[sub.length - 1] = h.pt;           // exakt den Nutzer-Wegpunkt treffen
+    out.push(...(out.length ? sub.slice(1) : sub));
+    s = h.idx;
+  }
+  const tail = subsampleRangeForReroute(s, endIdx);
+  out.push(...(out.length ? tail.slice(1) : tail));
+  return out;
+}
+
+// ── Stichwege („Zickzack-Spitzen") aus einer BRouter-Antwort entfernen ────────
+// BRouter MUSS durch jeden übergebenen Wegpunkt fahren. Liegt so ein Wegpunkt
+// auf einem Weg, den das gewählte Profil meidet (typisch nach einem Profilwechsel
+// trekking → fastbike: Wirtschaftswege, Radwege abseits der Straße), fährt die
+// Route dorthin und auf demselben Weg wieder zurück. Das sieht auf der Karte wie
+// eine scharfe Zacke aus und bringt keinen Meter Fortschritt.
+// Erkennung: die Route kehrt nach SPUR_MIN_KM…SPUR_MAX_KM Fahrstrecke auf
+// weniger als SPUR_GAP_KM an denselben Ort zurück UND der Rückweg fährt den
+// Hinweg wirklich zurück (Prüfung `_isRetrace`). Ohne die zweite Bedingung
+// würden auch echte Rundkurse/Serpentinen gekappt — in einem Test wurden so
+// 89 km sinnvoller Strecke entfernt.
+const SPUR_GAP_KM   = 0.03;   // 30 m — „derselbe Ort"
+const SPUR_MIN_KM   = 0.15;   // kürzere Schleifen (Kreisverkehr, Wendehammer) bleiben
+const SPUR_MAX_KM   = 6;      // längere Schleifen sind vermutlich gewollt
+const SPUR_TRACE_KM = 0.05;   // 50 m Toleranz beim Vergleich Hin-/Rückweg
+const SPUR_VIA_KM   = 0.15;   // so nah muss ein Wegpunkt an der Schleife liegen,
+                              // damit sie als „nur seinetwegen gefahren" gilt
+const SPUR_KEEP_KM  = 0.3;    // Schutzradius um vom Nutzer gesetzte Wegpunkte
+
+// Führt die Schleife [i..j] zu einem der Punkte `targets`? Punkte am Fuß der
+// Schleife zählen nicht — dort kommt die Route auch ohne sie vorbei.
+// Anfang und Ende der Schleife liegen definitionsgemäß < SPUR_GAP_KM
+// auseinander, deshalb genügt pts[i] als Bezugspunkt.
+function _loopReaches(pts, cum, i, j, targets, radiusKm) {
+  if (!targets || !targets.length) return false;
+  const maxD = (cum[j] - cum[i]) / 2 + radiusKm;
+  for (const t of targets) {
+    const dBase = hav(t[0], t[1], pts[i][0], pts[i][1]);
+    if (dBase <= radiusKm || dBase > maxD) continue;
+    for (let x = i; x <= j; x++)
+      if (hav(t[0], t[1], pts[x][0], pts[x][1]) <= radiusKm) return true;
+  }
+  return false;
+}
+
+// Liegt zwischen i und j ein echter Stichweg (Hinweg = Rückweg)? Bei einem
+// Stichweg fallen die Punkte in gleichem Abstand vom Anfang bzw. vom Ende
+// zusammen; bei einem echten Rundkurs liegen sie weit auseinander.
+function _isRetrace(pts, cum, i, j) {
+  const len = cum[j] - cum[i];
+  const at = km => {                       // Index zur Fahrstrecke km, in [i..j]
+    let lo = i, hi = j;
+    while (lo < hi) { const m = (lo + hi) >> 1; if (cum[m] < km) lo = m + 1; else hi = m; }
+    return lo;
+  };
+  for (const t of [0.15, 0.3, 0.45]) {
+    const a = pts[at(cum[i] + len * t)];
+    const b = pts[at(cum[j] - len * t)];
+    if (hav(a[0], a[1], b[0], b[1]) > SPUR_TRACE_KM) return false;
+  }
+  return true;
+}
+
+function stripSpurs(res, viaPts, keepPts) {
+  const pts = res.pts, eles = res.eles;
+  const vias  = viaPts  || [];
+  const keeps = keepPts || [];
+  const n = pts.length;
+  if (n < 3) return { pts, eles, removedKm: 0 };
+  const hasEle = eles && eles.length === n;
+
+  const cum = new Float64Array(n);
+  for (let i = 1; i < n; i++)
+    cum[i] = cum[i - 1] + hav(pts[i-1][0], pts[i-1][1], pts[i][0], pts[i][1]);
+
+  const CELL = 0.0006;                    // ~60 m Raster
+  const grid = new Map();
+  for (let i = 0; i < n; i++) {
+    const k = `${Math.round(pts[i][0] / CELL)},${Math.round(pts[i][1] / CELL)}`;
+    let a = grid.get(k);
+    if (!a) grid.set(k, a = []);
+    a.push(i);                            // aufsteigend, da i aufsteigend läuft
+  }
+
+  const outP = [], outE = [];
+  let i = 0, removedKm = 0;
+  while (i < n) {
+    outP.push(pts[i]);
+    if (hasEle) outE.push(eles[i]);
+    const ci = Math.round(pts[i][0] / CELL), cj = Math.round(pts[i][1] / CELL);
+    let best = -1;                        // spätester Punkt, der wieder hier liegt
+    for (let di = -1; di <= 1; di++) for (let dj = -1; dj <= 1; dj++) {
+      const arr = grid.get(`${ci + di},${cj + dj}`);
+      if (!arr) continue;
+      for (let x = arr.length - 1; x >= 0; x--) {
+        const j = arr[x];
+        if (j <= best || j <= i) continue;
+        const loop = cum[j] - cum[i];
+        if (loop > SPUR_MAX_KM) continue;
+        if (loop < SPUR_MIN_KM) break;    // ab hier nur noch kürzere Schleifen
+        if (hav(pts[i][0], pts[i][1], pts[j][0], pts[j][1]) <= SPUR_GAP_KM
+            && (_isRetrace(pts, cum, i, j)
+                || _loopReaches(pts, cum, i, j, vias, SPUR_VIA_KM))
+            && !_loopReaches(pts, cum, i, j, keeps, SPUR_KEEP_KM)) { best = j; break; }
+      }
+    }
+    if (best > i) { removedKm += cum[best] - cum[i]; i = best + 1; }
+    else i++;
+  }
+  return { pts: outP, eles: hasEle ? outE : [], removedKm };
+}
+
 function ptsKm(pts) {
   let d = 0;
   for (let i = 1; i < pts.length; i++)
@@ -4774,6 +4897,14 @@ async function applyReroute() {
     if (camp) savedTargets.push({ i, isManual, camp: { ...camp } });
   });
 
+  // Vom Nutzer gesetzte Route-Wegpunkte sind feste Zwischenziele — sie dürfen
+  // beim Neuberechnen (z. B. nach einem Profilwechsel) nicht verloren gehen.
+  const hardWps = routeEditWps
+    .map(w => ({ idx: nearestRoutePt(w[0], w[1], 0, ROUTE_PTS.length - 1), pt: w.slice() }))
+    .sort((a, b) => a.idx - b.idx);
+
+  let strippedKm = 0;
+
   try {
     let newPts  = [];
     let newEles = [];
@@ -4790,10 +4921,11 @@ async function applyReroute() {
         const segEndIdx = i < NUM_STAGES - 1
           ? Math.min(routeIdxAtKm(stageMainBoundaryKm(i)), ROUTE_PTS.length - 1)
           : ROUTE_PTS.length - 1;
-        waypoints.push(...subsampleRangeForReroute(segStartIdx, segEndIdx).slice(1));
+        waypoints.push(...rerouteWaypoints(segStartIdx, segEndIdx, hardWps).slice(1));
         segStartIdx = segEndIdx;
       }
-      const { pts, eles } = await brouterRoute(waypoints);
+      const { pts, eles, removedKm } = stripSpurs(await brouterRoute(waypoints), waypoints, routeEditWps);
+      strippedKm += removedKm;
       newPts  = pts;
       newEles = eles;
     } else {
@@ -4807,7 +4939,10 @@ async function applyReroute() {
           btn.textContent = `⏳ Etappe ${i + 1} / ${NUM_STAGES}…`;
           // Zwischenpunkte aus der Originalroute mitgeben (siehe oben) statt nur
           // Start+Ende — hält den neu berechneten Abschnitt nah am ursprünglichen Verlauf.
-          const { pts, eles } = await brouterRoute(subsampleRangeForReroute(sIdx, eIdx));
+          const segWps = rerouteWaypoints(sIdx, eIdx, hardWps);
+          const { pts, eles, removedKm } = stripSpurs(
+            await brouterRoute(segWps), segWps, routeEditWps);
+          strippedKm += removedKm;
           segPts  = pts;
           segEles = eles;
           newSegKm[i] = ptsKm(segPts);   // tatsächliche km für adjustKm
@@ -4869,6 +5004,13 @@ async function applyReroute() {
     toggleReroutePanel();
     if (ROUTE_PTS.length) leafletMap.fitBounds(L.polyline(ROUTE_PTS).getBounds(), {padding:[40,40]});
     drawCustomRoutes(); render(); drawMarkers();
+    if (routeEditMode) {
+      routeEditStart = ROUTE_PTS[0].slice();
+      routeEditEnd   = ROUTE_PTS[ROUTE_PTS.length - 1].slice();
+      clearRouteEditMarkers(); drawRouteEditMarkers();
+    }
+    if (strippedKm > 0.1)
+      _overpassHintShow(`↺ ${strippedKm.toFixed(1)} km Stichwege entfernt (Wegpunkte passen nicht zum Profil „${currentProfile}")`, 6000);
 
   } catch(e) {
     document.getElementById('rerouteStageList').insertAdjacentHTML('afterend',
