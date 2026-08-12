@@ -1,5 +1,9 @@
 # Changelog — Radreise Planer
 
+## v1.10.5 (2026-08-11)
+- **`overpass.kumi.systems` wird jetzt wirklich immer zuerst gefragt**, solange er nicht gesperrt ist — auch wenn ein anderer Server gemessen schneller ist. Bisher entschied allein die gemessene Antwortzeit, und ein Server ohne Messwert wurde mit 5 Sekunden angesetzt: Nach einem Ausfall verlor kumi damit gegen jeden, der schon einmal geantwortet hatte, und wäre kaum noch drangekommen. Ist er gesperrt, rutscht er wie bisher ans Ende.
+- **Die Abfragereihenfolge steht jetzt im Protokollfenster.** Über der Serverliste steht, in welcher Reihenfolge die Server gefragt werden und ab wann: „1. kumi ★ — sofort", „2. lambert — nach 2,5 s", „3. gall — nach 5 s". Die Server werden nämlich nicht gleichzeitig angefragt, sondern nacheinander zugeschaltet: der zweite nur, wenn der erste nach 2,5 Sekunden noch nichts geliefert hat. Das ★ markiert den bevorzugten Server. Damit ist auf einen Blick klar, wer als Nächstes drankommt und warum.
+
 ## v1.10.4 (2026-08-11)
 - **Es werden nur noch die drei tatsächlich vorhandenen OSM-Server angesprochen.** Von den bisherigen fünf Adressen waren zwei Dubletten: `overpass.private.coffee` läuft auf demselben Rechner wie `overpass.kumi.systems`, und `overpass-api.de` ist nur der Lastverteiler vor `gall` und `lambert`, die direkt in der Liste stehen. Das war nicht nur in der Serverübersicht irreführend (fünf Zeilen, drei Rechner), sondern kostete auch Zeit: Eine Abfrage hat drei Anläufe — und konnte zwei davon an ein und denselben gerade toten Rechner schicken, bevor sie einen gesunden erreichte. Zusätzlich wird zur Laufzeit geprüft, ob zwei Adressen auf denselben Rechner zeigen; falls ja, wird nur eine davon gefragt (schützt, falls sich die Zuordnung im Netz ändert).
 

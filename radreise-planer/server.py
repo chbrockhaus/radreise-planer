@@ -188,8 +188,8 @@ def delete_tour(tid):
     return False
 
 # ── Overpass: gestaffelt statt alle gleichzeitig ──────────────────────────────
-# GENAU EIN Name je Maschine — die Startreihenfolge sortiert dann zur Laufzeit
-# nach gemessener Antwortzeit (siehe _ep_order).
+# GENAU EIN Name je Maschine. Wer zuerst gefragt wird, entscheidet _ep_order:
+# OVERPASS_PREFERRED zuerst, danach nach gemessener Antwortzeit.
 # Nicht in der Liste, mit Absicht:
 #   • overpass.private.coffee — derselbe Rechner wie kumi.systems (193.219.97.30)
 #   • overpass-api.de — nur der Lastverteiler vor gall und lambert, die hier
@@ -200,10 +200,18 @@ def delete_tour(tid):
 # OVERPASS_MAX_TRIES Anläufe und könnte zwei davon an denselben toten Rechner
 # schicken. Gegen versehentliche Dopplung (DNS ändert sich) entdoppelt _ep_order.
 OVERPASS_ENDPOINTS = [
-    'https://overpass.kumi.systems/api/interpreter',      # erste Wahl (nutzt auch brouter-web)
+    'https://overpass.kumi.systems/api/interpreter',      # OVERPASS_PREFERRED
     'https://lambert.openstreetmap.de/api/interpreter',   # OSM-DE, Rechner 1
     'https://gall.openstreetmap.de/api/interpreter',      # OSM-DE, Rechner 2
 ]
+
+# Dieser Server wird IMMER zuerst gefragt, solange er nicht gesperrt ist — auch
+# wenn ein anderer gemessen schneller ist. So gewollt: es ist derselbe Server,
+# den auch brouter-web benutzt. Ohne diesen Vorrang entschied allein die
+# gemessene Antwortzeit, und ein Server ohne Messwert (Annahme 5 s) verlor gegen
+# jeden, der schon einmal geantwortet hatte — kumi wäre nach einem Ausfall also
+# nur noch selten drangekommen.
+OVERPASS_PREFERRED = 'overpass.kumi.systems'
 
 # Mehr als drei Versuche pro Abfrage bringen nichts und würden nur das Zeitbudget
 # aufblähen (jeder weitere Endpoint verlängert die Frist um OVERPASS_STAGGER).
@@ -262,8 +270,8 @@ def _slot(key):
 
 
 def _ep_order():
-    """Endpoints nach Erfolgsaussicht: nicht gesperrt, wenig belegt, schnell —
-    und höchstens EINER je Maschine.
+    """Reihenfolge der Endpoints: nicht gesperrt, dann OVERPASS_PREFERRED,
+    dann wenig belegt, dann schnell — und höchstens EINER je Maschine.
 
     Die Entdopplung ist wichtig, falls doch einmal zwei Namen auf denselben
     Rechner zeigen (DNS kann sich ändern, overpass-api.de verteilt z. B. auf
@@ -273,7 +281,8 @@ def _ep_order():
     now  = time.time()
     with _ep_lock:
         sortiert = sorted(OVERPASS_ENDPOINTS, key=lambda ep: (
-            _slot(keys[ep])['cool_until'] > now,
+            _slot(keys[ep])['cool_until'] > now,          # Gesperrte ans Ende
+            ep.split('/')[2] != OVERPASS_PREFERRED,       # Vorzugsserver nach vorn
             _slot(keys[ep])['inflight'],
             _ep_avg.get(ep) if _ep_avg.get(ep) is not None else 5.0,
         ))
@@ -424,18 +433,25 @@ def _cancel_check(token):
 
 
 def _overpass_state():
-    """Zustand je Endpoint für das OSM-Protokollfenster im Frontend."""
+    """Zustand je Endpoint für das OSM-Protokollfenster — in GENAU der
+    Reihenfolge, in der sie bei der nächsten Abfrage gefragt würden, samt
+    Zeitpunkt der Staffelung (siehe _ep_order und OVERPASS_STAGGER)."""
     now = time.time()
     out = []
-    for ep in OVERPASS_ENDPOINTS:
+    for i, ep in enumerate(_ep_order()):
         st  = _slot(_ep_key(ep))
         avg = _ep_avg.get(ep)
         out.append({
-            'host':     ep.split('/')[2],
-            'avg_ms':   round(avg * 1000) if avg is not None else None,
-            'inflight': st['inflight'],
-            'cool_s':   max(0, round(st['cool_until'] - now)),
-            'fails':    st.get('fails', 0),
+            'host':      ep.split('/')[2],
+            'rank':      i + 1,
+            # Sekunden nach Start der Abfrage, ab denen dieser Server dazukommt —
+            # None, wenn er außerhalb von OVERPASS_MAX_TRIES liegt.
+            'start_s':   round(i * OVERPASS_STAGGER, 1) if i < OVERPASS_MAX_TRIES else None,
+            'preferred': ep.split('/')[2] == OVERPASS_PREFERRED,
+            'avg_ms':    round(avg * 1000) if avg is not None else None,
+            'inflight':  st['inflight'],
+            'cool_s':    max(0, round(st['cool_until'] - now)),
+            'fails':     st.get('fails', 0),
         })
     return out
 

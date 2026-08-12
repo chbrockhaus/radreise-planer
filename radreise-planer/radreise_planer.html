@@ -297,9 +297,12 @@ header{background:var(--surface);border-bottom:1px solid var(--border);padding:9
 .osmlog-empty{padding:10px;font-size:11px;color:var(--muted);font-style:italic;text-align:center}
 .osmsrv{padding:5px 8px;border-bottom:1px solid var(--border);font-size:10px;line-height:1.5}
 .osmsrv:empty{display:none}
-.osmsrv-row{display:flex;gap:6px;align-items:baseline;font-family:'DM Mono',monospace}
+.osmsrv-titel{color:var(--accent);text-transform:uppercase;letter-spacing:.05em;font-size:9px;margin-bottom:2px}
+.osmsrv-row{display:flex;gap:8px;align-items:baseline;font-family:'DM Mono',monospace}
+.osmsrv-row .rk{color:var(--muted);width:12px}
 .osmsrv-row .nm{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--text)}
-.osmsrv-row .st{color:var(--muted);white-space:nowrap}
+.osmsrv-row .go{color:var(--muted);white-space:nowrap;text-align:right;width:78px}
+.osmsrv-row .st{color:var(--muted);white-space:nowrap;text-align:right;width:120px}
 .osmsrv-row.cool .nm,.osmsrv-row.cool .st{color:#ff8a5c}
 .osmsrv-row.fast .st{color:var(--green,#28c76a)}
 .poi-set-lbl{font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.05em}
@@ -341,7 +344,7 @@ header{background:var(--surface);border-bottom:1px solid var(--border);padding:9
 </head>
 <body>
 <header>
-  <div class="logo">🚴 Radreise Planer<span class="logo-ver">v1.10.4</span></div>
+  <div class="logo">🚴 Radreise Planer<span class="logo-ver">v1.10.5</span></div>
   <div class="stats">
     <div class="stat"><span class="sl">Route</span><span class="sv" id="hdrRoute" style="color:var(--muted)">–</span></div>
     <div class="stat"><span class="sl">Gesamt</span><span class="sv" id="hdrTotal" style="color:var(--muted)">–</span></div>
@@ -2146,15 +2149,17 @@ function _shortHost(h) {
   return String(h || '').replace(/^overpass\./, '').split('.')[0];
 }
 
-/** Zustand der OSM-Server (wer ist schnell, wer gerade gesperrt) — beantwortet
- *  die Frage „läuft mein bevorzugter Server wieder?" ohne Blick ins Log. */
+/** Zustand der OSM-Server in der Reihenfolge, in der sie gefragt werden —
+ *  beantwortet „wer ist als Nächstes dran?" und „läuft mein bevorzugter Server
+ *  wieder?" ohne Blick ins Log. Die Server werden gestaffelt zugeschaltet: der
+ *  zweite erst, wenn der erste nach ein paar Sekunden nichts geliefert hat. */
 async function _loadOsmSrvState() {
   const box = document.getElementById('osmSrvList');
   if (!box || !document.getElementById('osmLogPanel')?.classList.contains('open')) return;
   try {
     const r = await fetch('/api/overpass-status', { signal: AbortSignal.timeout(5000) });
     const eps = (await r.json()).endpoints || [];
-    box.innerHTML = eps.map(e => {
+    const zeilen = eps.map(e => {
       let cls = '', st;
       if (e.cool_s > 0) {
         cls = 'cool';
@@ -2166,9 +2171,16 @@ async function _loadOsmSrvState() {
         st = 'noch nicht genutzt';
       }
       if (e.inflight) st += ` · ${e.inflight} aktiv`;
-      return `<div class="osmsrv-row ${cls}"><span class="nm">${_shortHost(e.host)}</span>`
+      const start = e.start_s == null ? 'nicht gefragt'
+                  : e.start_s === 0   ? 'sofort'
+                  : `nach ${String(e.start_s).replace('.', ',')} s`;
+      return `<div class="osmsrv-row ${cls}">`
+           + `<span class="rk">${e.rank}.</span>`
+           + `<span class="nm">${_shortHost(e.host)}${e.preferred ? ' ★' : ''}</span>`
+           + `<span class="go">${start}</span>`
            + `<span class="st">${st}</span></div>`;
     }).join('');
+    box.innerHTML = '<div class="osmsrv-titel">Abfragereihenfolge · ★ bevorzugt</div>' + zeilen;
   } catch { box.innerHTML = ''; }
 }
 
