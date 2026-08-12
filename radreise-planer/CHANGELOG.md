@@ -1,5 +1,9 @@
 # Changelog — Radreise Planer
 
+## v1.10.9 (2026-08-12)
+- **Fix: Nach dem Entfernen eines Wegpunkts lief die Route nicht wieder auf ihrer ursprünglichen Bahn.** Der betroffene Abschnitt wurde neu berechnet — und BRouter wählt zwischen denselben zwei Punkten oft einen anderen Weg als den ursprünglich aufgezeichneten, sodass die Strecke danach über Stellen lief, die man nie gesetzt hatte. Jetzt merkt sich jeder Wegpunkt beim Setzen genau die Strecke, die er verdrängt; beim Entfernen wird sie unverändert wieder eingesetzt. Getestet: Wegpunkt setzen und wieder entfernen ergibt die Route punktgenau wie vorher (12.467 Punkte, 1045,203 km — identisch), auch bei einem 6 km neben der Route gesetzten Wegpunkt, bei mehreren Wegpunkten in beliebiger Reihenfolge und nach Verschieben. Nebenbei geht es jetzt ohne Routing-Aufruf, also sofort.
+- Passt die gemerkte Strecke nicht mehr zur aktuellen Route (z. B. nach „Neu routen" mit anderem Profil), wird wie bisher neu berechnet.
+
 ## v1.10.8 (2026-08-12)
 - **Neu: Ein Klick auf einen Route-Wegpunkt entfernt ihn**, und der Abschnitt zwischen seinen beiden Nachbarpunkten wird sofort neu berechnet. Bisher ging das nur per Doppelklick und stand nur im Tooltip. Ziehen zum Verschieben funktioniert unverändert — ein Klick direkt nach dem Ziehen löscht nicht. Versehentlich entfernt? „↩ Rückgängig" in der Bearbeiten-Leiste holt den Wegpunkt samt Streckenverlauf zurück.
 - **Fix: Änderungen im Bearbeiten-Modus wurden nicht gespeichert.** Wegpunkt setzen, verschieben oder entfernen änderte die Route nur in der geöffneten Seite — nach einem Neuladen war sie wieder wie vorher. Jetzt wird nach jeder Änderung gespeichert.
