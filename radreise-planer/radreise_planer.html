@@ -295,6 +295,13 @@ header{background:var(--surface);border-bottom:1px solid var(--border);padding:9
 .osmlog-lbl{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--text)}
 .osmlog-ms{font-family:'DM Mono',monospace;font-size:10px;color:var(--muted);white-space:nowrap}
 .osmlog-empty{padding:10px;font-size:11px;color:var(--muted);font-style:italic;text-align:center}
+.map-extent{background:rgba(18,22,32,.85);border:1px solid var(--border);border-radius:4px;
+  padding:2px 6px;margin:0 0 3px 0;font:10px/1.5 'DM Mono',monospace;color:var(--text);
+  box-shadow:0 1px 4px rgba(0,0,0,.4);pointer-events:none}
+.osmmapinfo{padding:5px 8px;border-bottom:1px solid var(--border);font-size:10px;line-height:1.5;font-family:'DM Mono',monospace;color:var(--muted)}
+.osmmapinfo:empty{display:none}
+.osmmapinfo b{color:var(--text);font-weight:500}
+.osmmapinfo .warn{color:#ff8a5c}
 .osmsrv{padding:5px 8px;border-bottom:1px solid var(--border);font-size:10px;line-height:1.5}
 .osmsrv:empty{display:none}
 .osmsrv-titel{color:var(--accent);text-transform:uppercase;letter-spacing:.05em;font-size:9px;margin-bottom:2px}
@@ -344,7 +351,7 @@ header{background:var(--surface);border-bottom:1px solid var(--border);padding:9
 </head>
 <body>
 <header>
-  <div class="logo">🚴 Radreise Planer<span class="logo-ver">v1.10.5</span></div>
+  <div class="logo">🚴 Radreise Planer<span class="logo-ver">v1.10.6</span></div>
   <div class="stats">
     <div class="stat"><span class="sl">Route</span><span class="sv" id="hdrRoute" style="color:var(--muted)">–</span></div>
     <div class="stat"><span class="sl">Gesamt</span><span class="sv" id="hdrTotal" style="color:var(--muted)">–</span></div>
@@ -449,6 +456,7 @@ header{background:var(--surface);border-bottom:1px solid var(--border);padding:9
         <button onclick="clearOsmLog()">Leeren</button>
         <button onclick="toggleOsmLog()" title="Schließen">✕</button>
       </div>
+      <div id="osmMapInfo" class="osmmapinfo"></div>
       <div id="osmSrvList" class="osmsrv"></div>
       <div id="osmLogList"><div class="osmlog-empty">Noch keine Abfragen</div></div>
     </div>
@@ -894,10 +902,21 @@ function initMap() {
 
   L.control.scale({ imperial: false, metric: true, position: 'bottomright' }).addTo(leafletMap);
 
+  // Kantenlängen des sichtbaren Ausschnitts, direkt über dem Maßstabsbalken
+  const ausschnittCtl = L.control({ position: 'bottomright' });
+  ausschnittCtl.onAdd = () => {
+    _mapExtentEl = L.DomUtil.create('div', 'map-extent');
+    return _mapExtentEl;
+  };
+  ausschnittCtl.addTo(leafletMap);
+  _updateMapExtent();
+
   leafletMap.on('moveend zoomend', () => {
     if (_epVisible) _scheduleElevProfile();
     if (_activePois.size > 0) _schedulePoiRefresh(); // beide Modi refreshen bei Pan/Zoom
     _updatePoiCurrentKm();
+    _updateMapExtent();
+    _renderMapInfo();      // Protokollfenster, falls offen
   });
 
   buildMainRouteLayer();
@@ -2102,7 +2121,7 @@ function toggleOsmLog() {
   const open = !el.classList.contains('open');
   el.classList.toggle('open', open);
   document.getElementById('osmLogBtn')?.classList.toggle('active', open);
-  if (open) { _initOsmLogResize(); _renderOsmLog(); _loadOsmSrvState(); }
+  if (open) { _initOsmLogResize(); _renderOsmLog(); _renderMapInfo(); _loadOsmSrvState(); }
 }
 
 // Größe des Protokollfensters: ziehbar am Griff oben links, gemerkt in
@@ -2147,6 +2166,60 @@ function _initOsmLogResize() {
 // 'overpass.kumi.systems' → 'kumi', 'lambert.openstreetmap.de' → 'lambert'
 function _shortHost(h) {
   return String(h || '').replace(/^overpass\./, '').split('.')[0];
+}
+
+// Anzeige in der Karte (über dem Maßstabsbalken), siehe initMap
+let _mapExtentEl = null;
+function _updateMapExtent() {
+  if (!_mapExtentEl || !leafletMap) return;
+  // getBounds() wirft, solange die Karte noch keine Ansicht hat ("Set map center
+  // and zoom first") — beim Aufruf direkt nach dem Anlegen ist das der Fall.
+  let b;
+  try { b = leafletMap.getBounds(); } catch { return; }
+  const s = _bboxKm(b.getSouth(), b.getWest(), b.getNorth(), b.getEast());
+  _mapExtentEl.textContent = `${_km(s.breite)} × ${_km(s.hoehe)} km · Z${leafletMap.getZoom()}`;
+  _mapExtentEl.title = 'Breite × Höhe des sichtbaren Kartenausschnitts · Zoomstufe';
+}
+
+/** Kantenlängen eines Lat/Lon-Rechtecks in km (1° Breite ≈ 111,32 km, in
+ *  Längsrichtung mit dem Kosinus der mittleren Breite gestaucht). */
+function _bboxKm(s, w, n, e) {
+  return {
+    breite: (e - w) * 111.32 * Math.cos((s + n) / 2 * Math.PI / 180),
+    hoehe:  (n - s) * 111.32,
+  };
+}
+const _km = v => (v < 10 ? v.toFixed(1) : Math.round(v)).toString().replace('.', ',');
+
+/** Zeigt, wie groß der sichtbare Ausschnitt ist und welcher Bereich tatsächlich
+ *  abgefragt wird. Beides weicht bewusst voneinander ab: die Abfrage wird auf ein
+ *  0,05°-Raster aufgerundet, damit kleine Kartenbewegungen dieselbe Abfrage
+ *  ergeben und aus dem Zwischenspeicher bedient werden können. */
+function _renderMapInfo() {
+  const el = document.getElementById('osmMapInfo');
+  if (!el || !leafletMap ||
+      !document.getElementById('osmLogPanel')?.classList.contains('open')) return;
+  let b;
+  try { b = leafletMap.getBounds(); } catch { return; }   // noch keine Ansicht
+  const s = _bboxKm(b.getSouth(), b.getWest(), b.getNorth(), b.getEast());
+  const balken = document.querySelector('.leaflet-control-scale-line')?.textContent.trim();
+  const zeilen = [`Ausschnitt <b>${_km(s.breite)} × ${_km(s.hoehe)} km</b>`
+    + ` · Zoom ${leafletMap.getZoom()}`
+    + (balken ? ` · Maßstabsbalken ${balken}` : '')];
+
+  const reg = _poiRegion();
+  if (reg.hint) {
+    zeilen.push(`<span class="warn">Keine Abfrage: ${reg.hint.replace(/^📍\s*/, '')}</span>`);
+  } else if (_poiMode === 'route') {
+    const n = (reg.region.match(/,/g).length) / 2;   // 'around:r,lat,lon,lat,lon,…'
+    zeilen.push(`Abgefragt: <b>${n} Streckenpunkte</b> mit ${_poiRouteKm} km Umkreis`);
+  } else {
+    const [gs, gw, gn, ge] = reg.region.split(',').map(Number);
+    const a = _bboxKm(gs, gw, gn, ge);
+    zeilen.push(`Abgefragt: <b>${_km(a.breite)} × ${_km(a.hoehe)} km</b>`
+      + ` (auf 0,05°-Raster aufgerundet, ${(a.breite*a.hoehe/(s.breite*s.hoehe)).toFixed(1).replace('.', ',')}× Fläche)`);
+  }
+  el.innerHTML = zeilen.join('<br>');
 }
 
 /** Zustand der OSM-Server in der Reihenfolge, in der sie gefragt werden —
@@ -5369,8 +5442,11 @@ function _poiRegion() {
     const visPts = _visibleRoutePts();
     if (visPts.length < 2)
       return { hint: '📍 Kein Streckenabschnitt im Kartenausschnitt — hereinzoomen', hintMs: 2000 };
-    // Sichtbare Punkte auf max. 60 reduzieren — Query bleibt klein
-    const step = Math.max(1, Math.floor(visPts.length / 60));
+    // Sichtbare Punkte auf max. 60 reduzieren — Query bleibt klein.
+    // AUFrunden, nicht abrunden: mit Math.floor ergab z.B. 110 Punkte die
+    // Schrittweite 1, also gar keine Ausdünnung — die Abfrage war dann doppelt
+    // so groß wie beabsichtigt (gemessen: 110 statt max. 60 Punkte).
+    const step = Math.max(1, Math.ceil(visPts.length / 60));
     const pts  = visPts.filter((_, i) => i % step === 0);
     const r = v => (Math.floor(v/g)*g).toFixed(3);
     return {
@@ -5386,7 +5462,6 @@ function _poiRegion() {
   const visKm = Math.round(_mapVisibleKm());
   if (visKm > _poiMaxKm)
     return { hint: `📍 Reinzoomen — zeigt ${visKm} km, Schwelle ${_poiMaxKm} km`, hintMs: 2500 };
-  _overpassHintHide();
   const bbox = [
     (Math.floor(b.getSouth()/g)*g).toFixed(4), (Math.floor(b.getWest()/g)*g).toFixed(4),
     (Math.ceil( b.getNorth()/g)*g).toFixed(4), (Math.ceil( b.getEast()/g)*g).toFixed(4),
@@ -5447,6 +5522,7 @@ async function _fetchPoiCatsNow(ids) {
     _overpassHintShow(reg.hint, reg.hintMs);
     return;
   }
+  _overpassHintHide();   // alten Hinweis wegnehmen, jetzt wird wirklich geladen
 
   // Schon geladene Kategorien sofort zeichnen — angefragt wird nur der Rest
   // (dasselbe Prinzip wie die lokale Objektdatenbank von overpass-frontend).
