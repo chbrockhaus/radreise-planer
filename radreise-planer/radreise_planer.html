@@ -351,7 +351,7 @@ header{background:var(--surface);border-bottom:1px solid var(--border);padding:9
 </head>
 <body>
 <header>
-  <div class="logo">🚴 Radreise Planer<span class="logo-ver">v1.11.4</span></div>
+  <div class="logo">🚴 Radreise Planer<span class="logo-ver">v1.11.5</span></div>
   <div class="stats">
     <div class="stat"><span class="sl">Route</span><span class="sv" id="hdrRoute" style="color:var(--muted)">–</span></div>
     <div class="stat"><span class="sl">Gesamt</span><span class="sv" id="hdrTotal" style="color:var(--muted)">–</span></div>
@@ -2625,18 +2625,52 @@ function subsampleRangeForReroute(startIdx, endIdx, intervalKm = 8, maxPts = 60)
 // nur zufällig trifft — der lila Punkt bleibt dann neben der Route liegen.
 // `hard` = [{idx, pt}, …] nach idx sortiert (siehe applyReroute).
 // Rückgabe enthält Start- UND Endpunkt des Abschnitts.
-function rerouteWaypoints(startIdx, endIdx, hard) {
-  const out = [];
-  let s = startIdx;
-  for (const h of (hard || [])) {
-    if (h.idx <= s || h.idx >= endIdx) continue;
-    const sub = subsampleRangeForReroute(s, h.idx);
-    sub[sub.length - 1] = h.pt;           // exakt den Nutzer-Wegpunkt treffen
-    out.push(...(out.length ? sub.slice(1) : sub));
-    s = h.idx;
+// Liegt ein Zwangspunkt weiter als das von der ALTEN Route entfernt, gilt der
+// gesamte Abschnitt beidseitig davon als bewusste Abweichung (z. B. andere
+// Flussseite) — dort werden keine Zwischenpunkte der alten Strecke mehr
+// verwendet. Ohne das zöge die Route nach dem Zwangspunkt kontinuierlich
+// zurück zur alten Streckenführung, weil ALLE folgenden Zwischenpunkte bis zum
+// nächsten Anker/Zwangspunkt sonst weiterhin von der alten Route stammen —
+// nicht nur die unmittelbar benachbarten.
+const STALE_VIA_THRESHOLD_KM = 3;
+const FREE_LEG_INTERVAL_KM   = 40;   // grobe Stützpunkte statt alter Streckenpunkte
+
+// Grobe, geradlinig interpolierte Stützpunkte zwischen zwei Punkten — verhindert,
+// dass BRouter über sehr große Distanzen völlig frei (und damit potenziell wild
+// abweichend) routet, ohne dabei zur alten (falschen) Streckenführung zu ziehen.
+function _interpolatedVias(ptA, ptB, intervalKm = FREE_LEG_INTERVAL_KM) {
+  const distKm = hav(ptA[0], ptA[1], ptB[0], ptB[1]);
+  const n = Math.max(0, Math.floor(distKm / intervalKm));
+  const out = [ptA];
+  for (let i = 1; i <= n; i++) {
+    const t = i / (n + 1);
+    out.push([ptA[0] + (ptB[0] - ptA[0]) * t, ptA[1] + (ptB[1] - ptA[1]) * t]);
   }
-  const tail = subsampleRangeForReroute(s, endIdx);
-  out.push(...(out.length ? tail.slice(1) : tail));
+  out.push(ptB);
+  return out;
+}
+
+function rerouteWaypoints(startIdx, endIdx, hard) {
+  // Checkpoints: Start-Anker, Zwangspunkte, End-Anker — mit Abstand zur alten
+  // Route (0 bei den Ankern selbst, da die per Definition auf ihr liegen).
+  const checkpoints = [{ idx: startIdx, pt: ROUTE_PTS[startIdx], offsetKm: 0 }];
+  for (const h of (hard || [])) {
+    if (h.idx <= startIdx || h.idx >= endIdx) continue;
+    checkpoints.push({ idx: h.idx, pt: h.pt, offsetKm: hav(h.pt[0], h.pt[1], ROUTE_PTS[h.idx][0], ROUTE_PTS[h.idx][1]) });
+  }
+  checkpoints.push({ idx: endIdx, pt: ROUTE_PTS[endIdx], offsetKm: 0 });
+
+  const out = [];
+  for (let i = 0; i < checkpoints.length - 1; i++) {
+    const a = checkpoints[i], b = checkpoints[i + 1];
+    const deviates = a.offsetKm > STALE_VIA_THRESHOLD_KM || b.offsetKm > STALE_VIA_THRESHOLD_KM;
+    const sub = deviates
+      ? _interpolatedVias(a.pt, b.pt)
+      : subsampleRangeForReroute(a.idx, b.idx);
+    sub[0] = a.pt;
+    sub[sub.length - 1] = b.pt;
+    out.push(...(out.length ? sub.slice(1) : sub));
+  }
   return out;
 }
 
