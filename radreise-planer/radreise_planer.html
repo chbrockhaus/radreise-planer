@@ -351,7 +351,7 @@ header{background:var(--surface);border-bottom:1px solid var(--border);padding:9
 </head>
 <body>
 <header>
-  <div class="logo">🚴 Radreise Planer<span class="logo-ver">v1.11.6</span></div>
+  <div class="logo">🚴 Radreise Planer<span class="logo-ver">v1.12.0</span></div>
   <div class="stats">
     <div class="stat"><span class="sl">Route</span><span class="sv" id="hdrRoute" style="color:var(--muted)">–</span></div>
     <div class="stat"><span class="sl">Gesamt</span><span class="sv" id="hdrTotal" style="color:var(--muted)">–</span></div>
@@ -5174,22 +5174,70 @@ function onMapClickRouteEdit(e) {
   _insertRouteWp(e.latlng.lat, e.latlng.lng);
 }
 
-async function _insertRouteWp(lat, lon) {
-  const anchors    = [routeEditStart, ...routeEditWps, routeEditEnd];
-  const anchorIdxs = anchors.map(pt => nearestRoutePt(pt[0], pt[1], 0, ROUTE_PTS.length - 1));
-  const clickIdx   = nearestRoutePt(lat, lon, 0, ROUTE_PTS.length - 1);
+/**
+ * Vollständige, nach Routenindex sortierte Ankerliste für Route-Wegpunkt-
+ * Neuberechnungen: Tourstart, jede Etappengrenze — oder, falls für die Etappe
+ * ein Camp-Ziel gesetzt ist, dessen Abzweigpunkt UND der Wiedereinstiegspunkt
+ * der Folge-Etappe (die Etappe endet dann ja am Camp, siehe drawMarkers) —,
+ * alle vom Nutzer gesetzten Route-Wegpunkte, Tourziel.
+ * Ein neuer/verschobener Wegpunkt wird nur zwischen seinen beiden UNMITTEL-
+ * BAREN Nachbarn darin neu berechnet — andere Etappen bleiben unangetastet,
+ * ein bereits gesetztes Camp-Ziel ebenso (dessen eigene Routing-Logik bleibt
+ * unverändert, der Abzweigpunkt dient hier nur als Grenze).
+ * `wpIdx` markiert Einträge, die aus routeEditWps stammen (Index dort).
+ */
+function _routeEditAnchors() {
+  const anchors = [];
+  const push = (idx, pt, wpIdx) => { if (Number.isFinite(idx)) anchors.push({ idx, pt, wpIdx }); };
 
-  let insertAt = routeEditWps.length;
-  for (let j = 0; j < anchorIdxs.length - 1; j++) {
-    if (clickIdx >= anchorIdxs[j] && clickIdx <= anchorIdxs[j + 1]) {
-      insertAt = j; break;
+  push(nearestRoutePt(routeEditStart[0], routeEditStart[1], 0, ROUTE_PTS.length - 1), routeEditStart);
+
+  for (let i = 0; i < NUM_STAGES - 1; i++) {
+    const ct = stages[i]?.campTarget;
+    if (ct && Number.isFinite(ct.branchIdx)) {
+      push(ct.branchIdx, ROUTE_PTS[ct.branchIdx]);
+      const cfp = stages[i + 1]?.campFromPrev;
+      if (cfp && Number.isFinite(cfp.rejoinIdx)) {
+        push(cfp.rejoinIdx, ROUTE_PTS[cfp.rejoinIdx]);
+      } else {
+        const idx = Math.min(routeIdxAtKm(stageMainBoundaryKm(i)), ROUTE_PTS.length - 1);
+        push(idx, ROUTE_PTS[idx]);
+      }
+    } else {
+      const idx = Math.min(routeIdxAtKm(stageMainBoundaryKm(i)), ROUTE_PTS.length - 1);
+      push(idx, ROUTE_PTS[idx]);
     }
   }
 
-  // Immer der volle Abschnitt zwischen den beiden Nachbar-Ankern — siehe
-  // _routeEditHardIdx oben.
-  const fromIdx = anchorIdxs[insertAt];
-  const toIdx   = anchorIdxs[insertAt + 1];
+  routeEditWps.forEach((wp, k) => push(nearestRoutePt(wp[0], wp[1], 0, ROUTE_PTS.length - 1), wp, k));
+  push(nearestRoutePt(routeEditEnd[0], routeEditEnd[1], 0, ROUTE_PTS.length - 1), routeEditEnd);
+
+  anchors.sort((a, b) => a.idx - b.idx);
+  return anchors;
+}
+
+async function _insertRouteWp(lat, lon) {
+  const clickIdx = nearestRoutePt(lat, lon, 0, ROUTE_PTS.length - 1);
+
+  // Position innerhalb routeEditWps bestimmen (nur eigene Wegpunkte zählen für
+  // den Array-Index, unabhängig von Etappen-/Camp-Ankern).
+  const wpAnchorIdxs = [routeEditStart, ...routeEditWps, routeEditEnd]
+    .map(pt => nearestRoutePt(pt[0], pt[1], 0, ROUTE_PTS.length - 1));
+  let insertAt = routeEditWps.length;
+  for (let j = 0; j < wpAnchorIdxs.length - 1; j++) {
+    if (clickIdx >= wpAnchorIdxs[j] && clickIdx <= wpAnchorIdxs[j + 1]) { insertAt = j; break; }
+  }
+
+  // Reroute-Grenzen aus der VOLLEN Ankerliste (Etappengrenzen/Camp-Abzweige
+  // eingeschlossen) — der neue Wegpunkt berührt nur den Bereich zwischen
+  // seinen unmittelbaren Nachbarn darin, nicht die ganze Tour.
+  const fullAnchors = _routeEditAnchors();
+  let fromIdx = fullAnchors[0].idx, toIdx = fullAnchors[fullAnchors.length - 1].idx;
+  for (let j = 0; j < fullAnchors.length - 1; j++) {
+    if (clickIdx >= fullAnchors[j].idx && clickIdx <= fullAnchors[j + 1].idx) {
+      fromIdx = fullAnchors[j].idx; toIdx = fullAnchors[j + 1].idx; break;
+    }
+  }
 
   const prev     = routeEditWps.map(w => w.slice());
   const prevOrig = routeEditOrig.slice();
@@ -5446,14 +5494,16 @@ function drawRouteEditMarkers() {
     m.on('drag', e => { routeEditWps[wi] = [e.latlng.lat, e.latlng.lng]; });
     m.on('dragend', async () => {
       const newPos = routeEditWps[wi];
-      // Voller Nachbar-zu-Nachbar-Abschnitt wie beim Setzen (_routeEditHardIdx) —
-      // fällt normalerweise exakt mit dem bei der letzten Berechnung gemerkten
-      // Bereich zusammen (Nachbarn haben sich nicht verschoben), die Erinnerung
-      // in routeEditOrig[wi] bleibt also unangetastet gültig.
-      const ancs  = [routeEditStart, ...routeEditWps, routeEditEnd];
-      const aidxs = ancs.map(pt => nearestRoutePt(pt[0], pt[1], 0, ROUTE_PTS.length - 1));
-      const fromIdx = aidxs[wi];
-      const toIdx   = aidxs[wi + 2];
+      // Voller Nachbar-zu-Nachbar-Abschnitt wie beim Setzen — aus der VOLLEN
+      // Ankerliste (Etappengrenzen/Camp-Abzweige eingeschlossen), damit das
+      // Verschieben nicht über die eigene Etappe hinausgreift. Fällt normaler-
+      // weise exakt mit dem bei der letzten Berechnung gemerkten Bereich
+      // zusammen (Nachbarn haben sich nicht verschoben), die Erinnerung in
+      // routeEditOrig[wi] bleibt also unangetastet gültig.
+      const fullAnchors = _routeEditAnchors();
+      const myPos   = fullAnchors.findIndex(a => a.wpIdx === wi);
+      const fromIdx = fullAnchors[myPos - 1].idx;
+      const toIdx   = fullAnchors[myPos + 1].idx;
       // Einfügeposition in der Zwischenpunktkette anhand der ALTEN Position
       // bestimmen (dort liegt der bisherige Abstecher in der aktuellen Route),
       // NICHT anhand der neuen — sonst sucht nearestRoutePt bei einem großen
@@ -5503,12 +5553,13 @@ async function deleteRouteWp(wi) {
   }
 
   // Sonst (Erinnerung ungültig, z. B. weil ein Nachbar-Wegpunkt sie überlappt
-  // hat): vollen Nachbarabschnitt neu rechnen — mit Zwischenpunkten aus der
+  // hat): vollen Nachbarabschnitt neu rechnen — aus der VOLLEN Ankerliste
+  // (Etappengrenzen/Camp-Abzweige eingeschlossen), mit Zwischenpunkten aus der
   // aktuellen Strecke, ohne den entfernten Wegpunkt zu erzwingen.
-  const ancs  = [routeEditStart, ...routeEditWps, routeEditEnd];
-  const aidxs = ancs.map(pt => nearestRoutePt(pt[0], pt[1], 0, ROUTE_PTS.length - 1));
-  const fromIdx = aidxs[wi];
-  const toIdx   = aidxs[wi + 2];
+  const fullAnchors = _routeEditAnchors();
+  const myPos   = fullAnchors.findIndex(a => a.wpIdx === wi);
+  const fromIdx = fullAnchors[myPos - 1].idx;
+  const toIdx   = fullAnchors[myPos + 1].idx;
   const prev     = routeEditWps.map(w => w.slice());
   const prevOrig = routeEditOrig.slice();
   routeEditWps.splice(wi, 1);
