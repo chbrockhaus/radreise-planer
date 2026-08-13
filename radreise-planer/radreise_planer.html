@@ -351,7 +351,7 @@ header{background:var(--surface);border-bottom:1px solid var(--border);padding:9
 </head>
 <body>
 <header>
-  <div class="logo">🚴 Radreise Planer<span class="logo-ver">v1.11.2</span></div>
+  <div class="logo">🚴 Radreise Planer<span class="logo-ver">v1.11.3</span></div>
   <div class="stats">
     <div class="stat"><span class="sl">Route</span><span class="sv" id="hdrRoute" style="color:var(--muted)">–</span></div>
     <div class="stat"><span class="sl">Gesamt</span><span class="sv" id="hdrTotal" style="color:var(--muted)">–</span></div>
@@ -5378,7 +5378,16 @@ function drawRouteEditMarkers() {
       const aidxs = ancs.map(pt => nearestRoutePt(pt[0], pt[1], 0, ROUTE_PTS.length - 1));
       const fromIdx = aidxs[wi];
       const toIdx   = aidxs[wi + 2];
-      const hardIdx = _routeEditHardIdx(fromIdx, toIdx, aidxs[wi + 1]);
+      // Einfügeposition in der Zwischenpunktkette anhand der ALTEN Position
+      // bestimmen (dort liegt der bisherige Abstecher in der aktuellen Route),
+      // NICHT anhand der neuen — sonst sucht nearestRoutePt bei einem großen
+      // Zug den nächstgelegenen Punkt der neuen Position auf der noch alten
+      // Route, landet dabei an einer beliebigen, oft falschen Stelle (z. B. ganz
+      // am Anfang), und die Route springt zum neuen Punkt, fällt danach aber
+      // über den Rest der Zwischenpunktkette wieder auf den alten Streckenverlauf
+      // zurück (genau das vom User beobachtete "zurück auf die alte Strecke").
+      const oldIdx  = nearestRoutePt(dragPrev[wi][0], dragPrev[wi][1], 0, ROUTE_PTS.length - 1);
+      const hardIdx = _routeEditHardIdx(fromIdx, toIdx, oldIdx);
       const wps = rerouteWaypoints(fromIdx, toIdx, [{ idx: hardIdx, pt: newPos }]);
       await _rerouteAndSplice(fromIdx, toIdx, wps, dragPrev, dragPrevOrig);
       setTimeout(() => { justDragged = false; }, 0);
