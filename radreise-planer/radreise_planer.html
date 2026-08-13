@@ -351,7 +351,7 @@ header{background:var(--surface);border-bottom:1px solid var(--border);padding:9
 </head>
 <body>
 <header>
-  <div class="logo">🚴 Radreise Planer<span class="logo-ver">v1.12.0</span></div>
+  <div class="logo">🚴 Radreise Planer<span class="logo-ver">v1.12.1</span></div>
   <div class="stats">
     <div class="stat"><span class="sl">Route</span><span class="sv" id="hdrRoute" style="color:var(--muted)">–</span></div>
     <div class="stat"><span class="sl">Gesamt</span><span class="sv" id="hdrTotal" style="color:var(--muted)">–</span></div>
@@ -5313,6 +5313,10 @@ async function _rerouteAndSplice(fromIdx, toIdx, brouterWps, prevWps, prevOrigs,
   const snapBase   = BASE_KM_INT;
   const snapAdjKms = stages.map(s => s.adjustKm);
   const snapEnds   = STAGE_ENDS.map(se => ({...se}));
+  // Campingplatz-Ziele VOR dieser Aktion sichern, damit „↩ Rückgängig" sie
+  // exakt auf diesen Stand zurücksetzt statt sie pauschal zu löschen.
+  const snapCamps         = stages.map(s => s.campTarget   ? { ...s.campTarget }   : null);
+  const snapCampsFromPrev = stages.map(s => s.campFromPrev ? { ...s.campFromPrev } : null);
 
   // Capture stage index ranges in OLD ROUTE_PTS before the splice
   const oldStageRanges = stages.map((_, si) => ({
@@ -5429,7 +5433,8 @@ async function _rerouteAndSplice(fromIdx, toIdx, brouterWps, prevWps, prevOrigs,
 
     routeEditHistory.push({
       wps: prevWps ?? [], origs: prevOrigs ?? [], pts: snapPts, eles: snapEles,
-      total_km: snapKm, base: snapBase, adjustKms: snapAdjKms, stageEnds: snapEnds
+      total_km: snapKm, base: snapBase, adjustKms: snapAdjKms, stageEnds: snapEnds,
+      camps: snapCamps, campsFromPrev: snapCampsFromPrev
     });
     routeEditRedoStack = [];
 
@@ -5581,7 +5586,9 @@ function _captureRouteEditState() {
     total_km:  TOTAL_KM,
     base:      BASE_KM_INT,
     adjustKms: stages.map(s => s.adjustKm),
-    stageEnds: STAGE_ENDS.map(se => ({...se}))
+    stageEnds: STAGE_ENDS.map(se => ({...se})),
+    camps:         stages.map(s => s.campTarget   ? { ...s.campTarget }   : null),
+    campsFromPrev: stages.map(s => s.campFromPrev ? { ...s.campFromPrev } : null)
   };
 }
 
@@ -5598,7 +5605,14 @@ function _applyRouteEditState(s) {
   BASE_KM_INT = s.base ?? (Math.round(TOTAL_KM / NUM_STAGES) || 1);
   if (s.stageEnds) STAGE_ENDS = s.stageEnds.map(se => ({...se}));
   if (s.adjustKms) s.adjustKms.forEach((adj, i) => { if (stages[i]) stages[i].adjustKm = adj; });
-  stages.forEach(st => { st.campTarget = null; st.campFromPrev = null; st.routeLoading = false; });
+  // Campingplatz-Ziele auf den Stand VOR dieser Aktion zurücksetzen statt sie
+  // pauschal zu löschen — sonst verschwindet z. B. ein längst gesetztes
+  // Etappenziel, nur weil man einen ganz anderen Wegpunkt rückgängig macht.
+  stages.forEach((st, i) => {
+    st.campTarget   = s.camps?.[i]         ? { ...s.camps[i] }         : null;
+    st.campFromPrev = s.campsFromPrev?.[i] ? { ...s.campsFromPrev[i] } : null;
+    st.routeLoading = false;
+  });
 }
 
 async function undoRouteEdit() { await _stepHistory(routeEditHistory,   routeEditRedoStack); }
