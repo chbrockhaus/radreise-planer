@@ -351,7 +351,7 @@ header{background:var(--surface);border-bottom:1px solid var(--border);padding:9
 </head>
 <body>
 <header>
-  <div class="logo">🚴 Radreise Planer<span class="logo-ver">v1.11.3</span></div>
+  <div class="logo">🚴 Radreise Planer<span class="logo-ver">v1.11.4</span></div>
   <div class="stats">
     <div class="stat"><span class="sl">Route</span><span class="sv" id="hdrRoute" style="color:var(--muted)">–</span></div>
     <div class="stat"><span class="sl">Gesamt</span><span class="sv" id="hdrTotal" style="color:var(--muted)">–</span></div>
@@ -5176,7 +5176,8 @@ async function _insertRouteWp(lat, lon) {
   const hardIdx = _routeEditHardIdx(fromIdx, toIdx, clickIdx);
   const wps = rerouteWaypoints(fromIdx, toIdx, [{ idx: hardIdx, pt: [lat, lon] }]);
 
-  await _rerouteAndSplice(fromIdx, toIdx, wps, prev, prevOrig);
+  await _rerouteAndSplice(fromIdx, toIdx, wps, prev, prevOrig, undefined,
+    { idx: insertAt, target: [lat, lon] });
 }
 
 // Passt die gemerkte Original-Geometrie eines Wegpunkts noch auf die aktuelle
@@ -5216,7 +5217,9 @@ function _safeToRestore(wi, slot) {
 
 // Local segment reroute: only recalculates ROUTE_PTS[fromIdx..toIdx], preserving all
 // stage boundaries and waypoints outside that segment.
-async function _rerouteAndSplice(fromIdx, toIdx, brouterWps, prevWps, prevOrigs, fixedSeg) {
+// syncWp = {idx, target} — nach dem Routen wird routeEditWps[idx] auf den
+// tatsächlich befahrenen Punkt nächst `target` geschnappt (siehe stripSpurs unten).
+async function _rerouteAndSplice(fromIdx, toIdx, brouterWps, prevWps, prevOrigs, fixedSeg, syncWp) {
   if (routeEditRouting) return;
   routeEditRouting = true;
   const statusEl = document.getElementById('routeEditStatus');
@@ -5238,12 +5241,35 @@ async function _rerouteAndSplice(fromIdx, toIdx, brouterWps, prevWps, prevOrigs,
     end:   si < NUM_STAGES - 1 ? routeIdxAtKm(stageMainBoundaryKm(si)) : ROUTE_PTS.length - 1
   }));
 
+  let strippedKm = 0;
+
   try {
     // fixedSeg = fertige Geometrie (z. B. die zurückgeholte Originalstrecke beim
     // Entfernen eines Wegpunkts) — dann ist kein BRouter-Aufruf nötig.
-    const { pts: newPts, eles: newEles } = fixedSeg
-      ? { pts: fixedSeg.pts, eles: fixedSeg.eles || [] }
-      : await brouterRoute(brouterWps);
+    // Sonst: Stichwege entfernen (BRouter fährt zu einem Wegpunkt hin und auf
+    // demselben Weg zurück, wenn dort kein durchgehender Weg existiert — z. B.
+    // eine Sackgasse) — dieselbe Bereinigung wie bei „Neu routen".
+    let newPts, newEles;
+    if (fixedSeg) {
+      newPts  = fixedSeg.pts;
+      newEles = fixedSeg.eles || [];
+    } else {
+      const stripped = stripSpurs(await brouterRoute(brouterWps), brouterWps, []);
+      newPts     = stripped.pts;
+      newEles    = stripped.eles;
+      strippedKm = stripped.removedKm;
+    }
+
+    // Auf den tatsächlich befahrenen Punkt schnappen: wurde eine Sackgasse zum
+    // exakten Ziel gerade herausgeschnitten, liegt der Marker sonst neben der Route.
+    if (syncWp && !fixedSeg) {
+      let mi = 0, md = Infinity;
+      newPts.forEach((p, i) => {
+        const d = hav(syncWp.target[0], syncWp.target[1], p[0], p[1]);
+        if (d < md) { md = d; mi = i; }
+      });
+      if (routeEditWps[syncWp.idx]) routeEditWps[syncWp.idx] = newPts[mi].slice();
+    }
 
     // Splice new segment — only fromIdx..toIdx is replaced
     ROUTE_PTS        = [...ROUTE_PTS.slice(0, fromIdx),  ...newPts,  ...ROUTE_PTS.slice(toIdx + 1)];
@@ -5317,6 +5343,9 @@ async function _rerouteAndSplice(fromIdx, toIdx, brouterWps, prevWps, prevOrigs,
     _syncHistoryBtns();
     await saveRouteData();   // Wegpunkt setzen/verschieben/entfernen soll bleiben
 
+    if (strippedKm > 0.05)
+      _overpassHintShow(`↺ ${strippedKm.toFixed(1)} km Sackgasse übersprungen`, 5000);
+
     if (savedTargets.length) {
       if (statusEl) statusEl.textContent = '⏳ Etappenziel(e) neu berechnen…';
       await reapplyTargets(savedTargets);
@@ -5389,7 +5418,8 @@ function drawRouteEditMarkers() {
       const oldIdx  = nearestRoutePt(dragPrev[wi][0], dragPrev[wi][1], 0, ROUTE_PTS.length - 1);
       const hardIdx = _routeEditHardIdx(fromIdx, toIdx, oldIdx);
       const wps = rerouteWaypoints(fromIdx, toIdx, [{ idx: hardIdx, pt: newPos }]);
-      await _rerouteAndSplice(fromIdx, toIdx, wps, dragPrev, dragPrevOrig);
+      await _rerouteAndSplice(fromIdx, toIdx, wps, dragPrev, dragPrevOrig, undefined,
+        { idx: wi, target: newPos });
       setTimeout(() => { justDragged = false; }, 0);
     });
     m.on('click', async e => {
