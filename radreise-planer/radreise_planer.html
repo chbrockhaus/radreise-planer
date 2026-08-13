@@ -351,7 +351,7 @@ header{background:var(--surface);border-bottom:1px solid var(--border);padding:9
 </head>
 <body>
 <header>
-  <div class="logo">🚴 Radreise Planer<span class="logo-ver">v1.11.5</span></div>
+  <div class="logo">🚴 Radreise Planer<span class="logo-ver">v1.11.6</span></div>
   <div class="stats">
     <div class="stat"><span class="sl">Route</span><span class="sv" id="hdrRoute" style="color:var(--muted)">–</span></div>
     <div class="stat"><span class="sl">Gesamt</span><span class="sv" id="hdrTotal" style="color:var(--muted)">–</span></div>
@@ -5266,14 +5266,26 @@ async function _rerouteAndSplice(fromIdx, toIdx, brouterWps, prevWps, prevOrigs,
   const snapAdjKms = stages.map(s => s.adjustKm);
   const snapEnds   = STAGE_ENDS.map(se => ({...se}));
 
-  const oldSegKm      = routeCumDist[toIdx] - routeCumDist[fromIdx];
-  const spliceStartKm = routeCumDist[fromIdx];
-
   // Capture stage index ranges in OLD ROUTE_PTS before the splice
   const oldStageRanges = stages.map((_, si) => ({
     start: si > 0 ? routeIdxAtKm(stageMainBoundaryKm(si - 1)) : 0,
     end:   si < NUM_STAGES - 1 ? routeIdxAtKm(stageMainBoundaryKm(si)) : ROUTE_PTS.length - 1
   }));
+
+  // Geografische Position jeder Etappengrenze NACH dem gleich gespleissten
+  // Bereich sichern — ihre Strecke ändert sich nicht, nur ihr kumulativer
+  // Kilometerwert (wegen der Längenänderung davor). Wird nach dem Splice per
+  // Koordinate neu eingerastet statt (fälschlich) nur DIE ERSTE Grenze um die
+  // GESAMTE Längenänderung zu verschieben — das kollabiert die Struktur, sobald
+  // eine Neuberechnung mehr als eine Etappengrenze überspannt (beim „vollen
+  // Nachbarabschnitt"-Modell der Regelfall bei den ersten Wegpunkten einer
+  // Tour). Grenzen INNERHALB des gespleissten Bereichs haben keine sinnvolle
+  // alte Position mehr und behalten einfach ihr bisheriges adjustKm.
+  const afterBoundaries = [];
+  for (let i = 0; i < NUM_STAGES - 1; i++) {
+    const bIdx = routeIdxAtKm(stageMainBoundaryKm(i));
+    if (bIdx > toIdx) afterBoundaries.push({ i, pt: ROUTE_PTS[bIdx] });
+  }
 
   let strippedKm = 0;
 
@@ -5312,16 +5324,17 @@ async function _rerouteAndSplice(fromIdx, toIdx, brouterWps, prevWps, prevOrigs,
     buildCumDist();
     TOTAL_KM = routeCumDist[routeCumDist.length - 1] || TOTAL_KM;
 
-    // Shift adjustKm of exactly the first stage boundary after the spliced segment
-    // so that all subsequent boundaries stay at their geographic positions.
-    const newSegKm = routeCumDist[fromIdx + newPts.length - 1] - routeCumDist[fromIdx];
-    const deltaKm  = newSegKm - oldSegKm;
-    if (Math.abs(deltaKm) > 0.001) {
-      for (let i = 0; i < NUM_STAGES - 1; i++) {
-        if (stageMainBoundaryKm(i) > spliceStartKm + 0.001) {
-          stages[i].adjustKm += deltaKm;
-          break;
-        }
+    // Etappengrenzen NACH dem gespleissten Bereich per Koordinate wieder
+    // einrasten (siehe afterBoundaries oben) — hält sie an ihrer tatsächlichen
+    // geografischen Position, unabhängig davon, wie viele Etappengrenzen der
+    // gespleisste Bereich selbst überspannt hat.
+    if (afterBoundaries.length) {
+      let prevIdx = fromIdx + newPts.length - 1;   // Ende des neu gespleissten Bereichs
+      for (const { i, pt } of afterBoundaries) {
+        const idx = nearestRoutePt(pt[0], pt[1], prevIdx, ROUTE_PTS.length - 1);
+        const prevBoundaryKm = i > 0 ? stageMainBoundaryKm(i - 1) : 0;
+        stages[i].adjustKm = (routeCumDist[idx] - prevBoundaryKm) - BASE_KM_INT;
+        prevIdx = idx;
       }
     }
 
