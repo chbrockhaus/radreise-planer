@@ -1,5 +1,8 @@
 # Changelog — Radreise Planer
 
+## v1.12.2 (2026-08-14)
+- **Fix: Nach „↩ Rückgängig" blieb ein per Suche gesetztes Campingplatz-Ziel zwar als Ziel eingetragen, sprang aber optisch wieder auf die alte Etappengrenze zurück** (User-Report mit Screenshots: Etappenende-Symbol sprang von „Lahnaue" nach „Kirchhain", Name in der Seitenleiste wurde zu generischem „Campingplatz"). Ursache: Wird beim Neuberechnen eines Wegpunkts in derselben Etappe automatisch ein Camp-Ziel mit-neuberechnet (Fix von v1.12.1), ersetzt das intern die Liste der gefundenen Campingplätze dieser Etappe durch einen einzelnen Eintrag — der in v1.12.1 mitgesicherte Camp-Zustand verwies danach mit seinem alten Listenindex auf die falsche (neue, verkürzte) Liste. Jetzt wird die komplette Campingplatz-Liste der Etappe mitgesichert und beim Rückgängig/Wiederherstellen exakt mitwiederhergestellt, nicht nur das Ziel selbst.
+
 ## v1.12.1 (2026-08-14)
 - **Fix: „↩ Rückgängig" im Bearbeiten-Modus löschte alle gesetzten Campingplatz-Ziele mit**, auch wenn die rückgängig gemachte Aktion gar nichts mit einem Camp zu tun hatte. Ursache: Beim Wiederherstellen eines früheren Streckenstands wurden Campingplatz-Ziele bisher pauschal auf allen Etappen gelöscht statt auf den Stand vor der jeweiligen Aktion zurückgesetzt. Jetzt wird der Camp-Zustand zusammen mit der Route gesichert und beim Rückgängig/Wiederherstellen exakt mitwiederhergestellt — auch wenn der zurückgenommene Wegpunkt direkt neben dem Camp lag.
 

@@ -351,7 +351,7 @@ header{background:var(--surface);border-bottom:1px solid var(--border);padding:9
 </head>
 <body>
 <header>
-  <div class="logo">🚴 Radreise Planer<span class="logo-ver">v1.12.1</span></div>
+  <div class="logo">🚴 Radreise Planer<span class="logo-ver">v1.12.2</span></div>
   <div class="stats">
     <div class="stat"><span class="sl">Route</span><span class="sv" id="hdrRoute" style="color:var(--muted)">–</span></div>
     <div class="stat"><span class="sl">Gesamt</span><span class="sv" id="hdrTotal" style="color:var(--muted)">–</span></div>
@@ -5317,6 +5317,11 @@ async function _rerouteAndSplice(fromIdx, toIdx, brouterWps, prevWps, prevOrigs,
   // exakt auf diesen Stand zurücksetzt statt sie pauschal zu löschen.
   const snapCamps         = stages.map(s => s.campTarget   ? { ...s.campTarget }   : null);
   const snapCampsFromPrev = stages.map(s => s.campFromPrev ? { ...s.campFromPrev } : null);
+  // …samt der Liste, in die campTarget.ci hineinzeigt — reapplyTargets()
+  // (unten) ersetzt sie ggf. durch eine minimierte Liste; ohne dieses
+  // Mitsichern würde ein späteres Rückgängig den alten ci-Index gegen die
+  // dann falsche Liste auflösen.
+  const snapCampsitesList = stages.map(s => s.campsites ? s.campsites.slice() : null);
 
   // Capture stage index ranges in OLD ROUTE_PTS before the splice
   const oldStageRanges = stages.map((_, si) => ({
@@ -5434,7 +5439,7 @@ async function _rerouteAndSplice(fromIdx, toIdx, brouterWps, prevWps, prevOrigs,
     routeEditHistory.push({
       wps: prevWps ?? [], origs: prevOrigs ?? [], pts: snapPts, eles: snapEles,
       total_km: snapKm, base: snapBase, adjustKms: snapAdjKms, stageEnds: snapEnds,
-      camps: snapCamps, campsFromPrev: snapCampsFromPrev
+      camps: snapCamps, campsFromPrev: snapCampsFromPrev, campsitesList: snapCampsitesList
     });
     routeEditRedoStack = [];
 
@@ -5588,7 +5593,13 @@ function _captureRouteEditState() {
     adjustKms: stages.map(s => s.adjustKm),
     stageEnds: STAGE_ENDS.map(se => ({...se})),
     camps:         stages.map(s => s.campTarget   ? { ...s.campTarget }   : null),
-    campsFromPrev: stages.map(s => s.campFromPrev ? { ...s.campFromPrev } : null)
+    campsFromPrev: stages.map(s => s.campFromPrev ? { ...s.campFromPrev } : null),
+    // Liste der GEFUNDENEN Campingplätze je Etappe — campTarget.ci ist nur ein
+    // Index hinein. reapplyTargets() ersetzt diese Liste beim Neuberechnen
+    // durch einen einzelnen Eintrag (ci wird dabei auf 0 zurückgesetzt); ohne
+    // dieses Mitsichern zeigt „↩ Rückgängig" danach den falschen/keinen
+    // Campingplatz an, weil der alte ci-Index in die neue, minimierte Liste zeigt.
+    campsitesList: stages.map(s => s.campsites ? s.campsites.slice() : null)
   };
 }
 
@@ -5608,9 +5619,15 @@ function _applyRouteEditState(s) {
   // Campingplatz-Ziele auf den Stand VOR dieser Aktion zurücksetzen statt sie
   // pauschal zu löschen — sonst verschwindet z. B. ein längst gesetztes
   // Etappenziel, nur weil man einen ganz anderen Wegpunkt rückgängig macht.
+  // campsitesList gehört untrennbar dazu: campTarget.ci ist nur ein Index in
+  // diese Liste — reapplyTargets() ersetzt sie beim Neuberechnen durch einen
+  // einzelnen Eintrag (ci→0); ohne sie mit zurückzusetzen würde der alte
+  // ci-Index in die falsche (neue, minimierte) Liste zeigen und der Camp-Name
+  // sowie die Position gingen verloren, obwohl campTarget selbst noch existiert.
   stages.forEach((st, i) => {
     st.campTarget   = s.camps?.[i]         ? { ...s.camps[i] }         : null;
     st.campFromPrev = s.campsFromPrev?.[i] ? { ...s.campsFromPrev[i] } : null;
+    if (s.campsitesList) st.campsites = s.campsitesList[i] ? s.campsitesList[i].slice() : null;
     st.routeLoading = false;
   });
 }
